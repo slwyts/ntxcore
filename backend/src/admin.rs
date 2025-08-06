@@ -3,9 +3,6 @@ use actix_web::{get, post, delete, web, HttpResponse, Responder,put};
 use serde::{Deserialize, Serialize};
 use crate::db::Database;
 use crate::utils::{is_valid_date, get_current_utc_time_string, is_valid_evm_address, is_valid_email, is_valid_password, hash_password, generate_invite_code}; // 引入更多 utils 函数
-use crate::db::{DailyUserData, UserInfo, UserFullInfo, ExchangeInfo, AcademyArticleSummary, HistoricalPlatformData, DailyUserTradeRecord, ReferralRelationship, InviterCommissionSummary, FinancialSummary, DaoAuction, AdminDashboardData, AcademyArticle,UserBscAddressInfo,UserGNTXInfo,UserExchangeBindingInfo};
-use crate::db::FakeTradeData;
-use rusqlite::Error as RusqliteError;
 
 
 #[derive(Deserialize)]

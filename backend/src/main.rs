@@ -7,6 +7,7 @@ mod user;
 mod settlement;
 mod admin;
 mod middleware; // 引入中间件模块
+mod tasks;
 
 use actix_web::{web, App, HttpServer};
 use dotenv::dotenv;
@@ -67,6 +68,9 @@ async fn main() -> std::io::Result<()> {
         key: key,
     });
 
+    tasks::start_scheduled_tasks(db_data.clone()).await;
+    // 启动任务调度
+    println!("任务调度已启动");
     // 启动 HTTP 服务器
     let bind_address = format!("0.0.0.0:{}", port);
     println!("服务器启动在: http://{}", bind_address);

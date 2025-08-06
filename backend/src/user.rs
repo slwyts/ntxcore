@@ -7,7 +7,7 @@ use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
 use rusqlite::{params, Error as RusqliteError}; 
 use crate::JwtConfig;
 use crate::auth::Claims;
-use crate::db::{InvitedUserInfo, CommissionRecord, DaoAuction, AcademyArticle, AcademyArticleSummary, WithdrawalOrder}; // 导入新增的结构体 WithdrawalOrder
+ // 导入新增的结构体 WithdrawalOrder
 
 //edit user nickname 
 #[derive(Deserialize)]

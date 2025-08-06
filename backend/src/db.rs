@@ -1696,15 +1696,18 @@ impl Database {
             r#"
             SELECT
                 ue.exchange_uid,
-                ue.userId -- 修改此处，选择 user_exchanges 表中的 userId
+                ue.userId,
+                u.email  -- 从 users 表选择 email
             FROM user_exchanges ue
+            JOIN users u ON ue.userId = u.id -- 关联 users 表
             WHERE ue.exchangeId = ? AND ue.isBound = 1
             "#
         )?;
         let users = stmt.query_map(params![exchange_id], |row| {
             Ok(UserExchangeBindingInfo {
                 exchange_uid: row.get(0)?,
-                user_id: row.get(1)?, // 映射到修改后的 user_id 字段
+                user_id: row.get(1)?,
+                email: row.get(2)?, // 新增: 获取 email 数据
             })
         })?.collect::<Result<Vec<_>, _>>()?;
         Ok(users)
@@ -2139,11 +2142,14 @@ pub struct FinancialSummary {
     pub total_ntx_withdrawn: f64,
 }
 
+// src/db.rs
+
 #[derive(Debug, Serialize)]
 pub struct UserExchangeBindingInfo {
+    pub email: String,
     #[serde(rename = "exchangeUid")]
     pub exchange_uid: String,
-    #[serde(rename = "userId")] 
+    #[serde(rename = "userId")]
     pub user_id: i64,
 }
 
