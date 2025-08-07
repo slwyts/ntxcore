@@ -2,10 +2,10 @@
 use rusqlite::{Connection, Result, params, params_from_iter, OptionalExtension, Transaction, Error as RusqliteError};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use serde::Serialize;
 use std::collections::HashMap;
 use chrono::{Utc};
 use rusqlite::ffi; // Import ffi for custom error creation
+use serde::{Deserialize, Serialize};
 
 pub struct Database {
     pub conn: Arc<Mutex<Connection>>,
@@ -202,6 +202,30 @@ impl Database {
             "INSERT OR IGNORE INTO platform_data (id, totalMined, totalCommission, totalBurned, totalTradingVolume, platformUsers, genesis_date) VALUES (1, 0.0, 0.0, 0.0, 0.0, 0, strftime('%Y-%m-%d', 'now', 'utc', '+8 hours'))",
             [],
         )?;
+
+        // KOL 用户表
+        conn.execute(
+            r#"
+            CREATE TABLE IF NOT EXISTS kols (
+                user_id INTEGER PRIMARY KEY NOT NULL, -- 用户ID，也是外键
+                commission_rate REAL NOT NULL,        -- KOL的专属总返佣比例 (例如 80.0 表示 80%)
+                is_active BOOLEAN NOT NULL DEFAULT TRUE, -- 是否激活
+                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+                updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE -- 当用户被删除时，KOL记录也一并删除
+            )
+            "#,
+            [],
+        )?;
+
+        // 为 is_active 创建索引，便于快速查找所有活跃的KOL
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_kols_is_active ON kols (is_active)",
+            [],
+        )?;
+
+
+
 
         // 插入交易所数据
         let exchanges = vec![
@@ -1819,23 +1843,80 @@ impl Database {
 
         tx.commit()
     }
-    // 检查用户是否有在指定日期有交易记录的直属下级
-    // pub fn has_invited_user_with_trade_on_date(&self, inviter_email: &str, trade_date: &str) -> Result<bool> {
-    //     let conn = self.conn.lock().unwrap();
-    //     // 查询是否有直属下级在指定日期有交易记录
-    //     let count: i64 = conn.query_row(
-    //         r#"
-    //         SELECT COUNT(DISTINCT dut.user_id)
-    //         FROM users u_invited
-    //         JOIN daily_user_trades dut ON u_invited.id = dut.user_id
-    //         WHERE u_invited.inviteBy = ? AND dut.trade_date = ?
-    //         LIMIT 1
-    //         "#,
-    //         params![inviter_email, trade_date],
-    //         |row| row.get(0),
-    //     )?;
-    //     Ok(count > 0)
-    // }
+
+//KOL相关
+    pub fn upsert_kol(&self, user_id: i64, commission_rate: f64, is_active: bool) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let current_time = Utc::now().to_rfc3339();
+        conn.execute(
+            r#"
+            INSERT INTO kols (user_id, commission_rate, is_active, created_at, updated_at)
+            VALUES (?1, ?2, ?3, ?4, ?4)
+            ON CONFLICT(user_id) DO UPDATE SET
+                commission_rate = excluded.commission_rate,
+                is_active = excluded.is_active,
+                updated_at = excluded.updated_at
+            "#,
+            params![user_id, commission_rate, is_active, current_time],
+        )?;
+        Ok(())
+    }
+
+    // 删除 KOL
+    pub fn delete_kol(&self, user_id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM kols WHERE user_id = ?", params![user_id])?;
+        Ok(())
+    }
+
+    // 获取所有 KOL 的信息 (供 Admin 后台使用)
+    pub fn get_all_kols(&self) -> Result<Vec<KolInfo>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT
+                k.user_id,
+                u.nickname,
+                u.email,
+                k.commission_rate,
+                k.is_active,
+                k.created_at,
+                k.updated_at
+            FROM kols k
+            JOIN users u ON k.user_id = u.id
+            ORDER BY k.created_at DESC
+            "#
+        )?;
+        let kols_iter = stmt.query_map([], |row| {
+            Ok(KolInfo {
+                user_id: row.get(0)?,
+                nickname: row.get(1)?,
+                email: row.get(2)?,
+                commission_rate: row.get(3)?,
+                is_active: row.get(4)?,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+            })
+        })?;
+
+        kols_iter.collect::<Result<Vec<_>, _>>()
+    }
+    
+    // 【核心】为结算逻辑获取所有活跃的KOL，并以HashMap形式返回
+    pub fn get_active_kols_as_map(&self) -> Result<HashMap<i64, f64>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT user_id, commission_rate FROM kols WHERE is_active = TRUE"
+        )?;
+        let pairs = stmt.query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })?.collect::<Result<Vec<(i64, f64)>, _>>()?;
+
+        Ok(pairs.into_iter().collect())
+    }
+
+
+
 }
 // 交易所信息结构体
 #[derive(Debug, Serialize)]
@@ -2162,4 +2243,15 @@ pub struct FakeTradeData {
     pub trade_volume_usdt: f64,
     pub fee_usdt: f64,
     pub trade_date: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct KolInfo {
+    pub user_id: i64,
+    pub nickname: String, // 为了方便前端展示，我们连表查询
+    pub email: String,    // 同上
+    pub commission_rate: f64,
+    pub is_active: bool,
+    pub created_at: String,
+    pub updated_at: String,
 }

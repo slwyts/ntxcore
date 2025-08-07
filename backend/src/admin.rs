@@ -1,3 +1,10 @@
+// src/admin.rs
+use actix_web::{get, post, delete, web, HttpResponse, Responder,put}; 
+use serde::{Deserialize, Serialize};
+use crate::db::Database;
+use crate::utils::{is_valid_date, get_current_utc_time_string, is_valid_evm_address, is_valid_email, is_valid_password, hash_password, generate_invite_code}; // 引入更多 utils 函数
+
+// gntx
 // GNTX 数据库操作底层函数，供 gntx_sync 调用
 use crate::db::UserGNTXInfo;
 use anyhow::anyhow;
@@ -17,11 +24,8 @@ pub fn db_update_user_gntx_balance(db: &Database, email: &str, gntx_balance: f64
     }
     db.update_user_gntx_balance_by_email(email, gntx_balance).map_err(|e| anyhow::anyhow!(e))
 }
-// src/admin.rs
-use actix_web::{get, post, delete, web, HttpResponse, Responder,put}; 
-use serde::{Deserialize, Serialize};
-use crate::db::Database;
-use crate::utils::{is_valid_date, get_current_utc_time_string, is_valid_evm_address, is_valid_email, is_valid_password, hash_password, generate_invite_code}; // 引入更多 utils 函数
+
+
 
 
 #[derive(Deserialize)]
@@ -229,6 +233,14 @@ pub struct DateQueryRequest {
     pub date: String,
 }
 
+#[derive(Deserialize)]
+pub struct UpsertKolRequest {
+    pub user_id: i64,
+    pub commission_rate: f64,
+    pub is_active: bool,
+}
+
+
 // 获取管理员仪表盘数据
 #[get("/dashboard")]
 pub async fn get_dashboard_data(db: web::Data<Database>) -> impl Responder {
@@ -393,25 +405,25 @@ pub async fn get_user_full_info(
 }
 
 //管理员删除用户
-#[delete("/users/{user_id}")]
-pub async fn delete_user_by_admin(
-    db: web::Data<Database>,
-    path: web::Path<i64>,
-) -> impl Responder {
-    let user_id = path.into_inner();
-    println!("API Info: /api/admin/users/{} - 收到删除用户请求。", user_id);
+// #[delete("/users/{user_id}")]
+// pub async fn delete_user_by_admin(
+//     db: web::Data<Database>,
+//     path: web::Path<i64>,
+// ) -> impl Responder {
+//     let user_id = path.into_inner();
+//     println!("API Info: /api/admin/users/{} - 收到删除用户请求。", user_id);
 
-    match db.delete_user(user_id) {
-        Ok(_) => {
-            println!("API Success: /api/admin/users/{} - 用户删除成功。", user_id);
-            HttpResponse::Ok().json(serde_json::json!({"message": "用户删除成功"}))
-        },
-        Err(e) => {
-            eprintln!("API Error: /api/admin/users/{} - 删除用户失败: {:?}", user_id, e);
-            HttpResponse::InternalServerError().json(serde_json::json!({"error": "删除用户失败"}))
-        },
-    }
-}
+//     match db.delete_user(user_id) {
+//         Ok(_) => {
+//             println!("API Success: /api/admin/users/{} - 用户删除成功。", user_id);
+//             HttpResponse::Ok().json(serde_json::json!({"message": "用户删除成功"}))
+//         },
+//         Err(e) => {
+//             eprintln!("API Error: /api/admin/users/{} - 删除用户失败: {:?}", user_id, e);
+//             HttpResponse::InternalServerError().json(serde_json::json!({"error": "删除用户失败"}))
+//         },
+//     }
+// }
 
 
 // 获取指定用户绑定的交易所
@@ -1344,6 +1356,63 @@ pub async fn update_ntx_control_percentage(
         Err(e) => {
             eprintln!("API Error: /api/admin/ntx_control/update_percentage - 更新NTX控制百分比失败: {:?}", e);
             HttpResponse::InternalServerError().json(serde_json::json!({"error": "数据库更新失败"}))
+        }
+    }
+}
+
+
+//kols
+
+// 获取所有KOL列表
+#[get("/kols")]
+pub async fn get_all_kols_admin(db: web::Data<Database>) -> impl Responder {
+    println!("API Info: /api/admin/kols - 收到获取所有KOL信息的请求。");
+    match db.get_all_kols() {
+        Ok(kols) => {
+            println!("API Success: /api/admin/kols - 成功获取 {} 个KOL信息。", kols.len());
+            HttpResponse::Ok().json(kols)
+        }
+        Err(e) => {
+            eprintln!("API Error: /api/admin/kols - 获取KOL列表失败: {:?}", e);
+            HttpResponse::InternalServerError().json(serde_json::json!({"error": "获取KOL列表失败"}))
+        }
+    }
+}
+
+// 添加或更新一个KOL
+#[post("/kols")]
+pub async fn upsert_kol_admin(db: web::Data<Database>, req: web::Json<UpsertKolRequest>) -> impl Responder {
+    println!("API Info: /api/admin/kols - 收到添加/更新KOL的请求，用户ID: {}", req.user_id);
+    if !(0.0..=100.0).contains(&req.commission_rate) {
+        return HttpResponse::BadRequest().json(serde_json::json!({"error": "返佣比例必须在0到100之间"}));
+    }
+
+    match db.upsert_kol(req.user_id, req.commission_rate, req.is_active) {
+        Ok(_) => {
+            println!("API Success: /api/admin/kols - 成功添加/更新KOL，用户ID: {}", req.user_id);
+            HttpResponse::Ok().json(serde_json::json!({"message": "KOL信息设置成功"}))
+        }
+        Err(e) => {
+            eprintln!("API Error: /api/admin/kols - 设置KOL失败: {:?}", e);
+            HttpResponse::InternalServerError().json(serde_json::json!({"error": "设置KOL信息失败"}))
+        }
+    }
+}
+
+// 删除一个KOL
+#[delete("/kols/{user_id}")]
+pub async fn delete_kol_admin(db: web::Data<Database>, path: web::Path<i64>) -> impl Responder {
+    let user_id = path.into_inner();
+    println!("API Info: /api/admin/kols/{} - 收到删除KOL的请求。", user_id);
+
+    match db.delete_kol(user_id) {
+        Ok(_) => {
+            println!("API Success: /api/admin/kols/{} - 成功删除KOL。", user_id);
+            HttpResponse::Ok().json(serde_json::json!({"message": "KOL删除成功"}))
+        }
+        Err(e) => {
+            eprintln!("API Error: /api/admin/kols/{} - 删除KOL失败: {:?}", user_id, e);
+            HttpResponse::InternalServerError().json(serde_json::json!({"error": "删除KOL失败"}))
         }
     }
 }

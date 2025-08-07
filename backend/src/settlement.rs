@@ -68,24 +68,31 @@ pub async fn trigger_daily_settlement_logic(
     let trade_date_str = date.unwrap_or_else(get_settlement_trade_date_string);
     println!("Logic Info: trigger_daily_settlement - Starting settlement for trade date: {}", trade_date_str);
 
-    let (platform_data, trades_for_settlement, exchanges_info, referral_map) = match (
+    let (platform_data, trades_for_settlement, exchanges_info, referral_map, active_kols_map) = match (
         db.get_platform_data(),
         db.get_trades_and_user_info_for_date(&trade_date_str),
         db.get_exchanges(),
         db.get_all_referral_relationships_as_map(),
+        db.get_active_kols_as_map(),
     ) {
-        (Ok(pd), Ok(tr), Ok(ex), Ok(re)) => (
+        (Ok(pd), Ok(tr), Ok(ex), Ok(re),Ok(kols)) => (
             pd,
             tr,
             ex.into_iter().map(|e| (e.id, e.mining_efficiency)).collect::<HashMap<_, _>>(),
             re,
+            kols,
         ),
-        (Err(e), _, _, _) => return Err(format!("Failed to fetch platform data: {:?}", e)),
-        (_, Err(e), _, _) => return Err(format!("Failed to fetch trade data: {:?}", e)),
-        (_, _, Err(e), _) => return Err(format!("Failed to fetch exchange data: {:?}", e)),
-        (_, _, _, Err(e)) => return Err(format!("Failed to fetch referral data: {:?}", e)),
-    };
+        (Err(e), _, _, _,_) => return Err(format!("Failed to fetch platform data: {:?}", e)),
+        (_, Err(e), _, _,_) => return Err(format!("Failed to fetch trade data: {:?}", e)),
+        (_, _, Err(e), _,_) => return Err(format!("Failed to fetch exchange data: {:?}", e)),
+        (_, _, _, Err(e),_) => return Err(format!("Failed to fetch referral data: {:?}", e)),
+        (_, _, _, _,Err(e)) => return Err(format!("Failed to fetch KOL data: {:?}", e)),
 
+    };
+    // 打印KOL信息用于调试
+    if !active_kols_map.is_empty() {
+        println!("Logic Info: Found {} active KOLs for today's settlement.", active_kols_map.len());
+    }
     if trades_for_settlement.is_empty() {
         println!("Logic Info: trigger_daily_settlement - No trades found for {}, skipping.", trade_date_str);
         return Ok(());
@@ -157,6 +164,8 @@ pub async fn trigger_daily_settlement_logic(
         let mut platform_bonus_10_pct_claimed = false;
         let mut current_user_id = trader_id;
         let mut is_first_level = true;
+        // 【新增】标记KOL额外奖励是否已被分配，防止重复计算
+        let mut kol_bonus_claimed = false;
 
         while let Some(&inviter_id) = referral_map.get(&current_user_id) {
             let is_inviter_broker = *broker_status_cache
@@ -195,11 +204,45 @@ pub async fn trigger_daily_settlement_logic(
                 }
                 platform_bonus_10_pct_claimed = true;
             }
+            // ===== 【新增KOL奖励逻辑】=====
+            // 在检查完常规分佣后，检查当前这个 inviter_id 是否是KOL
+            if !kol_bonus_claimed {
+                // get() 返回的是 Option<&f64>
+                if let Some(&kol_rate) = active_kols_map.get(&inviter_id) {
+                    
+                    // 标准的项目方支出比例是60%
+                    let standard_rate = 0.60; 
+                    let kol_rate_decimal = kol_rate / 100.0;
+                    
+                    // 计算KOL应得的【额外】奖励
+                    // 只有当KOL的配置比例高于标准比例时才有额外奖励
+                    if kol_rate_decimal > standard_rate {
+                        let additional_bonus_rate = kol_rate_decimal - standard_rate;
+                        let kol_usdt_bonus = raw_usdt_rebate_from_exchange * additional_bonus_rate;
+                        
+                        if kol_usdt_bonus > 0.0 {
+                            println!(
+                                "Logic Info: KOL Bonus! Trader {} generated rebate. KOL {} (Rate: {}%) gets extra {:.4} USDT.",
+                                trader_id, inviter_id, kol_rate, kol_usdt_bonus
+                            );
+                            let kol_earning_entry = final_earnings.entry(inviter_id).or_default();
+                            kol_earning_entry.usdt_bonus_earned += kol_usdt_bonus;
+                            commission_records.push((inviter_id, trader_id, kol_usdt_bonus, "USDT_KOL".to_string(), trade_date_str.clone()));
+                        }
+                        
+                        // 标记已分配，确保一个交易只给第一个遇到的KOL分配额外奖励
+                        kol_bonus_claimed = true; 
+                    }
+                }
+            }
+            // ============================
+
+
 
             current_user_id = inviter_id;
             is_first_level = false;
-
-            if bonus_20_pct_claimed && platform_bonus_10_pct_claimed {
+            // 如果所有可能的奖励都已分配，可以提前跳出循环
+            if bonus_20_pct_claimed && platform_bonus_10_pct_claimed && kol_bonus_claimed {
                 break;
             }
         }
@@ -208,6 +251,24 @@ pub async fn trigger_daily_settlement_logic(
     let total_ntx_distributed = final_earnings.values().map(|e| e.ntx_rebate + e.ntx_bonus_earned).sum();
     let total_usdt_commissions = final_earnings.values().map(|e| e.usdt_rebate + e.usdt_bonus_earned).sum();
     let all_involved_user_ids: HashSet<i64> = final_earnings.keys().cloned().collect();
+
+// ===== 【KOL特殊规则】KOL自身交易不产生NTX =====
+    // 在最终写入数据库之前，最后修正一次 final_earnings
+    for (user_id, earnings) in final_earnings.iter_mut() {
+        if active_kols_map.contains_key(user_id) {
+            if earnings.ntx_rebate > 0.0 {
+                 println!(
+                    "Logic Info: KOL Rule! User {} is a KOL. Their direct NTX rebate of {} is being nullified.",
+                    user_id, earnings.ntx_rebate
+                );
+                // 将KOL自己交易产生的NTX返佣清零
+                earnings.ntx_rebate = 0.0;
+            }
+        }
+    }
+
+
+
 
     match db.perform_daily_settlement(
         &trade_date_str,

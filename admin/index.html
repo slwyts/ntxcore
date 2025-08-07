@@ -530,7 +530,8 @@
                     <li><a href="#" data-section="user-management"><i class="fas fa-users"></i> <span>用户管理</span></a></li>
                     <li><a href="#" data-section="exchange-management"><i class="fas fa-exchange-alt"></i> <span>交易所管理</span></a></li>
                     <li><a href="#" data-section="user-exchange-bindings"><i class="fas fa-link"></i> <span>用户绑定查询</span></a></li>
-                    <li><a href="#" data-section="trade-data"><i class="fas fa-chart-line"></i> <span>交易数据</span></a></li> <!-- New Menu Item -->
+                    <li><a href="#" data-section="kol-management"><i class="fas fa-star"></i> <span>KOL管理</span></a></li>
+                    <li><a href="#" data-section="trade-data"><i class="fas fa-chart-line"></i> <span>交易数据</span></a></li>
                     <li><a href="#" data-section="article-management"><i class="fas fa-newspaper"></i> <span>文章管理</span></a></li>
                     <li><a href="#" data-section="commission-referral"><i class="fas fa-handshake"></i> <span>佣金与推荐</span></a></li>
                     <li><a href="#" data-section="withdrawal-orders"><i class="fas fa-money-check-alt"></i> <span>提现订单</span></a></li>
@@ -918,6 +919,33 @@
                 </div>
             </section>
 
+            <!-- ==================================================================== -->
+            <!-- KOL Management Section -->
+            <!-- ==================================================================== -->
+            <section id="kol-management" class="content-area">
+                <div class="section">
+                    <h2>KOL管理</h2>
+                    <p>管理平台上的关键意见领袖 (KOL)。KOL可以获得其邀请用户产生的交易手续费的特殊百分比返佣。</p>
+                    <button class="btn btn-success" id="create-kol-btn">添加新KOL</button>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>用户ID</th>
+                                <th>昵称</th>
+                                <th>邮箱</th>
+                                <th>返佣比例</th>
+                                <th>状态</th>
+                                <th>创建时间</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="kol-list-body">
+                            <!-- KOL数据将通过JS动态加载 -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
             <section id="system-tools" class="content-area">
                 <div class="section">
                     <h2>系统工具</h2>
@@ -1112,6 +1140,37 @@
                         </div>
                         <div class="form-actions">
                             <button type="submit" class="btn btn-primary">发起拍卖</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- ==================================================================== -->
+            <!-- KOL Add/Edit Modal -->
+            <!-- ==================================================================== -->
+            <div id="kol-modal" class="modal">
+                <div class="modal-content">
+                    <span class="close-button" data-modal="kol-modal">&times;</span>
+                    <h2 id="kol-modal-title">添加新KOL</h2>
+                    <form id="kol-form">
+                        <!-- 在编辑模式下，这个字段将不可用 -->
+                        <div class="form-group">
+                            <label for="kol-user-id">用户ID:</label>
+                            <input type="number" id="kol-user-id" class="form-control" required>
+                            <small>输入一个已存在的用户ID，将其设置为KOL。</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="kol-commission-rate">返佣比例 (%):</label>
+                            <input type="number" id="kol-commission-rate" class="form-control" step="0.1" min="0" max="100" required>
+                            <small>例如：输入85.5代表85.5%的返佣。</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="kol-is-active">激活状态:</label>
+                            <input type="checkbox" id="kol-is-active" checked>
+                            <small>取消勾选可暂时禁用此KOL的特殊返佣。</small>
+                        </div>
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary" id="save-kol-btn">保存</button>
                         </div>
                     </form>
                 </div>

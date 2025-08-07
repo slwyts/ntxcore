@@ -134,7 +134,7 @@ async fn main() -> std::io::Result<()> {
                     .service(admin::get_all_users)
                     .service(admin::add_user_by_admin) // 管理员添加用户
                     .service(admin::get_user_full_info)
-                    .service(admin::delete_user_by_admin)
+                    //.service(admin::delete_user_by_admin)
                     .service(admin::get_user_bound_exchanges)
                     .service(admin::get_all_exchanges_admin) // 获取所有交易所
                     .service(admin::add_daily_trade_data)
@@ -159,7 +159,7 @@ async fn main() -> std::io::Result<()> {
                     .service(admin::get_all_user_bsc_addresses)
                     .service(admin::publish_article) // 发布文章
                     .service(admin::modify_article) // 修改文章
-                    .service(admin::delete_article) // 
+                    .service(admin::delete_article) // 删除文章
                     .service(admin::get_all_articles_admin) // 
                     .service(admin::get_article_detail_admin) // 管理员获取文章详情
                     .service(admin::get_all_referral_relationships_admin) // 获取所有推荐关系
@@ -167,6 +167,10 @@ async fn main() -> std::io::Result<()> {
                     .service(admin::get_commissions_summary_by_inviter_admin) // 按邀请人汇总佣金数据
                     .service(admin::get_financial_summary_admin) // 获取财务汇总信息
                     .service(admin::update_ntx_control_percentage)// 新增：更新NTX分配控制的目标百分比
+                    
+                    .service(admin::get_all_kols_admin)
+                    .service(admin::upsert_kol_admin)
+                    .service(admin::delete_kol_admin)
             )
             .service(
                 web::scope("/api/system")
