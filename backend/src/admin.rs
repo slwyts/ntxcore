@@ -1,3 +1,22 @@
+// GNTX 数据库操作底层函数，供 gntx_sync 调用
+use crate::db::UserGNTXInfo;
+use anyhow::anyhow;
+
+/// 获取所有用户 GNTX 信息（底层函数，非 handler）
+pub fn db_get_all_user_gntx_info(db: &Database) -> Result<Vec<UserGNTXInfo>, anyhow::Error> {
+    db.get_all_user_bsc_addresses_with_gntx().map_err(|e| anyhow::anyhow!(e))
+}
+
+/// 通过邮箱更新 GNTX 余额（底层函数，非 handler）
+pub fn db_update_user_gntx_balance(db: &Database, email: &str, gntx_balance: f64) -> Result<(), anyhow::Error> {
+    if !crate::utils::is_valid_email(email) {
+        return Err(anyhow::anyhow!("邮箱格式不正确"));
+    }
+    if gntx_balance < 0.0 {
+        return Err(anyhow::anyhow!("GNTX 数量不能为负数"));
+    }
+    db.update_user_gntx_balance_by_email(email, gntx_balance).map_err(|e| anyhow::anyhow!(e))
+}
 // src/admin.rs
 use actix_web::{get, post, delete, web, HttpResponse, Responder,put}; 
 use serde::{Deserialize, Serialize};

@@ -7,9 +7,15 @@ use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
 use rusqlite::{params, Error as RusqliteError}; 
 use crate::JwtConfig;
 use crate::auth::Claims;
- // 导入新增的结构体 WithdrawalOrder
+// use ethers::core::types::{Signature, Address};
+// use std::str::FromStr;
 
-//edit user nickname 
+// use ethers::prelude::k256::ecdsa::Signature as K256Signature;
+// use ethers::prelude::H256;
+// use ethers::core::k256::ecdsa::VerifyingKey;
+// use ethers::utils::{keccak256, hex};
+// use std::str::FromStr;
+
 #[derive(Deserialize)]
 pub struct UpdateNicknameRequest {
     pub nickname: String,
@@ -52,14 +58,15 @@ pub struct WithdrawRequest {
     pub to_address: String,
 }
 
-// 绑定 BSC 地址请求体 (新增)
 #[derive(Deserialize)]
 pub struct BindBscAddressRequest {
     #[serde(rename = "bscAddress")]
     pub bsc_address: String,
+    pub message: String, // 离线签名时的原始消息
+    pub signature: String, // 用户离线签名
 }
 
-// 获取当前 DAO 拍卖状态的响应结构体 (新增)
+// 获取当前 DAO 拍卖状态的响应结构体
 #[derive(Serialize)]
 pub struct CurrentDaoAuctionResponse {
     #[serde(rename = "isAuctionInProgress")]
@@ -531,7 +538,7 @@ pub async fn get_user_withdrawal_records(
 }
 
 
-// 绑定用户自己的 BSC 地址 (新增)
+//绑定用户自己的 BSC 地址 (新增)
 #[post("/bind_bsc_address")]
 pub async fn bind_bsc_address(
     db: web::Data<Database>,
@@ -570,6 +577,104 @@ pub async fn bind_bsc_address(
         },
     }
 }
+
+//todo：web3钱包登录 离线签名 // 在 user.rs 中添加或替换现有的 bind_bsc_address 函数
+// #[post("/bind_bsc_address")]
+// pub async fn bind_bsc_address(
+//     db: web::Data<Database>,
+//     jwt_config: web::Data<JwtConfig>,
+//     req: HttpRequest,
+//     bind_req: web::Json<BindBscAddressRequest>,
+// ) -> impl Responder {
+//     println!("API Call: /api/user/bind_bsc_address received.");
+
+//     let user_id = match get_user_id_from_token(&req, &jwt_config) {
+//         Ok(id) => id,
+//         Err(resp) => {
+//             eprintln!("API Error: /api/user/bind_bsc_address - 未授权访问。");
+//             return resp;
+//         },
+//     };
+//     println!("API Info: /api/user/bind_bsc_address - 用户ID {} 请求绑定BSC地址。", user_id);
+
+//     // 1. 验证 BSC 地址格式
+//     if !is_valid_evm_address(&bind_req.bsc_address) {
+//         eprintln!("API Error: /api/user/bind_bsc_address - 无效的BSC地址: {}", bind_req.bsc_address);
+//         return HttpResponse::BadRequest().json(
+//             serde_json::json!({"error": "无效的BSC地址"})
+//         );
+//     }
+
+//     // 2. 从签名中恢复地址
+//     let signature = match Signature::from_str(&bind_req.signature) {
+//         Ok(sig) => sig,
+//         Err(e) => {
+//             eprintln!("API Error: /api/user/bind_bsc_address - 解析签名失败: {:?}", e);
+//             return HttpResponse::BadRequest().json(
+//                 serde_json::json!({"error": "无效的签名格式"})
+//             );
+//         }
+//     };
+    
+//     let recovered_address = match signature.recover_from_msg(&bind_req.message) {
+//         Ok(addr) => addr,
+//         Err(e) => {
+//             eprintln!("API Error: /api/user/bind_bsc_address - 从签名中恢复地址失败: {:?}", e);
+//             return HttpResponse::BadRequest().json(
+//                 serde_json::json!({"error": "签名验证失败，无法恢复地址"})
+//             );
+//         }
+//     };
+
+//     // 3. 将恢复出的地址与请求中的地址进行比较
+//     let provided_address = match Address::from_str(&bind_req.bsc_address) {
+//         Ok(addr) => addr,
+//         Err(e) => {
+//             eprintln!("API Error: /api/user/bind_bsc_address - 解析提供的地址失败: {:?}", e);
+//             return HttpResponse::BadRequest().json(
+//                 serde_json::json!({"error": "无效的BSC地址"})
+//             );
+//         }
+//     };
+
+//     if recovered_address != provided_address {
+//         eprintln!("API Error: /api/user/bind_bsc_address - 签名地址与请求地址不匹配。恢复的地址: {:?}, 提供的地址: {:?}", recovered_address, provided_address);
+//         return HttpResponse::Unauthorized().json(
+//             serde_json::json!({"error": "签名地址与绑定地址不匹配，验证失败"})
+//         );
+//     }
+
+//     // 4. 验证通过，执行数据库绑定操作
+//     let conn_mutex = db.conn.clone();
+//     let mut conn = conn_mutex.lock().unwrap();
+//     let tx = match conn.transaction() {
+//         Ok(t) => t,
+//         Err(e) => {
+//             eprintln!("API Error: /api/user/bind_bsc_address - 用户 {} 开启事务失败: {:?}", user_id, e);
+//             return HttpResponse::InternalServerError().finish();
+//         },
+//     };
+
+//     if let Err(e) = tx.execute(
+//         "UPDATE users SET bsc_address = ? WHERE id = ?",
+//         params![bind_req.bsc_address, user_id],
+//     ) {
+//         eprintln!("API Error: /api/user/bind_bsc_address - 绑定BSC地址失败: {:?}", e);
+//         return HttpResponse::InternalServerError().finish();
+//     }
+
+//     if let Err(e) = tx.commit() {
+//         eprintln!("API Error: /api/user/bind_bsc_address - 提交事务失败: {:?}", e);
+//         return HttpResponse::InternalServerError().finish();
+//     }
+
+//     println!("API Success: /api/user/bind_bsc_address - 用户 {} 成功绑定BSC地址: {}", user_id, bind_req.bsc_address);
+//     HttpResponse::Ok().json(
+//         serde_json::json!({"message": "BSC地址绑定成功"})
+//     )
+// }
+
+
 
 // 获取当前是否有 DAO 拍卖正在进行 (公开，无需 JWT) (新增)
 #[get("/current_dao_auction")]

@@ -6,8 +6,9 @@ mod utils;
 mod user;
 mod settlement;
 mod admin;
-mod middleware; // 引入中间件模块
+mod middleware;
 mod tasks;
+mod gntx_sync;
 
 use actix_web::{web, App, HttpServer};
 use dotenv::dotenv;
@@ -15,7 +16,7 @@ use std::env;
 use db::Database;
 use actix_cors::Cors;
 use actix_web::middleware::Logger;
-use crate::middleware::{AdminAuth, AdminKeyConfig}; // 导入 AdminAuth 中间件 和 AdminKeyConfig
+use crate::middleware::{AdminAuth, AdminKeyConfig};
 
 // JwtConfig
 #[derive(Clone)]
@@ -69,6 +70,8 @@ async fn main() -> std::io::Result<()> {
     });
 
     tasks::start_scheduled_tasks(db_data.clone()).await;
+    // 启动 GNTX 链上同步任务
+    gntx_sync::start_gntx_sync(db_data.clone()).await;
     // 启动任务调度
     println!("任务调度已启动");
     // 启动 HTTP 服务器

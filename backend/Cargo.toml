@@ -21,3 +21,6 @@ chrono-tz = "0.8" # 添加这一行
 env_logger = "0.11.8"
 futures-util = "0.3.31"
 tokio = { version = "1.47.0", features = ["full"] }
+ethers = "2.0.14"
+#ethers = { version = "2", features = ["abigen", "ws", "tokio-runtime"] }
+anyhow = "1"
