@@ -2223,8 +2223,6 @@ pub struct FinancialSummary {
     pub total_ntx_withdrawn: f64,
 }
 
-// src/db.rs
-
 #[derive(Debug, Serialize)]
 pub struct UserExchangeBindingInfo {
     pub email: String,
