@@ -164,21 +164,25 @@ pub async fn trigger_daily_settlement_logic(
         user_earning_entry.ntx_rebate += user_ntx_share;
 
         if let Some(&inviter_id) = referral_map.get(&trader_id) {
-            // 在分配NTX奖励给上级前，检查上级是否是KOL
+            // 检查上级是否是KOL
             if !active_kols_map.contains_key(&inviter_id) {
-                let inviter_ntx_share = ntx_rebate_total * 0.10; // 交易者的直接上级获得10%
+                // 上级不是KOL，正常分配
                 if inviter_ntx_share > 0.0 {
                     let inviter_earning_entry = final_earnings.entry(inviter_id).or_default();
                     inviter_earning_entry.ntx_bonus_earned += inviter_ntx_share;
                     commission_records.push((inviter_id, trader_id, inviter_ntx_share, "NTX".to_string(), trade_date_str.clone()));
                 }
             } else {
-                // 如果上级是KOL，则将这10%的NTX奖励不分配给他
-                // 只记录日志，不进行实际的NTX分配
-                println!(
-                    "Logic Info: KOL Rule! Trader {}'s inviter {} is a KOL. The 10% NTX bonus is not distributed to the inviter.",
-                    trader_id, inviter_id
-                );
+                // 上级是KOL，将奖励分配给 user_id = 1
+                if inviter_ntx_share > 0.0 {
+                    println!(
+                        "Logic Info: KOL Upline Rule! Trader {}'s inviter {} is a KOL. Redirecting {} NTX bonus to user_id=1.",
+                        trader_id, inviter_id, inviter_ntx_share
+                    );
+                    let platform_user_earning_entry = final_earnings.entry(1).or_default();
+                    platform_user_earning_entry.ntx_bonus_earned += inviter_ntx_share;
+                    commission_records.push((1, trader_id, inviter_ntx_share, "NTX_KOL_UPLINE".to_string(), trade_date_str.clone()));
+                }
             }
         }
 
@@ -280,22 +284,36 @@ pub async fn trigger_daily_settlement_logic(
         }
     }
 
-    // --- 4. 【KOL特殊规则】KOL自身交易不产生NTX ---
+    // --- 4. 【KOL特殊规则】处理KOL自身交易产生的NTX ---
     // 在所有计算完成后，最终写入数据库之前，修正一次 final_earnings
+    let mut ntx_redirected_from_kols_direct_trade: f64 = 0.0;
     for (user_id, earnings) in final_earnings.iter_mut() {
         // 检查该用户是不是KOL
         if active_kols_map.contains_key(user_id) {
-            // 如果他有自己交易产生的NTX返点，清零
+            // 如果KOL有自己交易产生的NTX返点，则重定向给 user_id = 1
             if earnings.ntx_rebate > 0.0 {
                  println!(
-                    "Logic Info: KOL Rule! User {} is a KOL. Their direct NTX rebate of {} is being nullified.",
+                    "Logic Info: KOL Direct Trade Rule! User {} is a KOL. Their direct NTX rebate of {} is being redirected to user_id=1.",
                     user_id, earnings.ntx_rebate
                 );
-                // 将KOL自己交易产生的NTX返佣清零。
-                // 注意：这里不影响他从下级处获得的 ntx_bonus_earned
+                // 累加准备重定向的NTX
+                ntx_redirected_from_kols_direct_trade += earnings.ntx_rebate;
+                // 将KOL自己交易产生的NTX返佣清零（因为它已被重定向）
                 earnings.ntx_rebate = 0.0;
             }
         }
+    }
+
+    // 将所有从KOL自身交易重定向的NTX统一加到 user_id = 1 的账户上
+    if ntx_redirected_from_kols_direct_trade > 0.0 {
+        let platform_user_earning_entry = final_earnings.entry(1).or_default();
+        platform_user_earning_entry.ntx_bonus_earned += ntx_redirected_from_kols_direct_trade;
+        println!(
+            "Logic Info: Total of {} NTX (from KOLs' direct trading) credited to user_id=1.",
+            ntx_redirected_from_kols_direct_trade
+        );
+         // 增加一条佣金记录，便于追踪这部分平台收入 (contributor_id=1 代表平台内部流转)
+        commission_records.push((1, 1, ntx_redirected_from_kols_direct_trade, "NTX_KOL_DIRECT".to_string(), trade_date_str.clone()));
     }
 
     // --- 5. 数据落盘 ---
