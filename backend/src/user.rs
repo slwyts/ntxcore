@@ -293,19 +293,13 @@ pub async fn want_withdraw_usdt(
     }
 
     let new_usdt_balance = user_info.usdt_balance - withdraw_req.amount as f64;
-    if let Err(e) = tx.execute(
-        "UPDATE users SET usdt_balance = ? WHERE id = ?",
-        params![new_usdt_balance, user_id],
-    ) {
+    if let Err(e) = db.update_user_balance_in_tx(&tx, user_id, new_usdt_balance, "USDT") {
         eprintln!("API Error: /api/user/want_withdraw_usdt - 扣除用户 {} USDT余额失败: {:?}", user_id, e);
         return HttpResponse::InternalServerError().finish();
     }
 
     let current_time = get_current_utc_time_string();
-    if let Err(e) = tx.execute(
-        "INSERT INTO withdrawal_orders (user_id, user_email, amount, currency, to_address, is_confirmed, created_at, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')",
-        params![user_id, user_info.email, withdraw_req.amount, "USDT", withdraw_req.to_address, false, current_time],
-    ) {
+    if let Err(e) = db.create_withdrawal_order_in_tx(&tx, user_id, &user_info.email, withdraw_req.amount, "USDT", &withdraw_req.to_address, &current_time){
         eprintln!("API Error: /api/user/want_withdraw_usdt - 创建USDT提现订单失败 {}: {:?}", user_id, e);
         return HttpResponse::InternalServerError().finish();
     }
@@ -402,19 +396,13 @@ pub async fn want_withdraw_ntx(
     }
 
     let new_ntx_balance = user_info.ntx_balance - withdraw_req.amount as f64;
-    if let Err(e) = tx.execute(
-        "UPDATE users SET ntx_balance = ? WHERE id = ?",
-        params![new_ntx_balance, user_id],
-    ) {
+    if let Err(e) = db.update_user_balance_in_tx(&tx, user_id, new_ntx_balance, "NTX") {
         eprintln!("API Error: /api/user/want_withdraw_ntx - 扣除用户 {} NTX余额失败: {:?}", user_id, e);
         return HttpResponse::InternalServerError().finish();
     }
 
     let current_time = get_current_utc_time_string();
-    if let Err(e) = tx.execute(
-        "INSERT INTO withdrawal_orders (user_id, user_email, amount, currency, to_address, is_confirmed, created_at, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')",
-        params![user_id, user_info.email, withdraw_req.amount, "NTX", withdraw_req.to_address, false, current_time],
-    ) {
+    if let Err(e) = db.create_withdrawal_order_in_tx(&tx, user_id, &user_info.email, withdraw_req.amount, "NTX", &withdraw_req.to_address, &current_time) {
         eprintln!("API Error: /api/user/want_withdraw_ntx - 创建NTX提现订单失败 {}: {:?}", user_id, e);
         return HttpResponse::InternalServerError().finish();
     }

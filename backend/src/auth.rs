@@ -151,7 +151,7 @@ pub async fn register(
         }
         
         // 删除验证码
-        tx.execute("DELETE FROM verification_codes WHERE email = ?", rusqlite::params![&req.email])?;
+        db.delete_verification_code_in_tx(&tx, &req.email)?;
 
         tx.commit()
     })();

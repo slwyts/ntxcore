@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use chrono::{Utc};
-use rusqlite::ffi; // Import ffi for custom error creation
+use rusqlite::ffi;
 use serde::Serialize;
 
 pub struct Database {
@@ -257,7 +257,7 @@ impl Database {
         Ok(())
     }
     
-    // 新增: 检查用户是否为经纪商 (Broker)
+    // 检查用户是否为经纪商 (Broker)
     pub fn is_broker(&self, user_id: i64) -> Result<bool> {
         let conn = self.conn.lock().unwrap();
         // 获取 gntx_balance 和 email
@@ -330,48 +330,9 @@ impl Database {
             platform_users: platform_data.platform_users,
         })
     }
-    
-    // 获取多个用户的邀请数量
-    // pub fn get_invited_user_counts(&self, user_ids: &[i64]) -> Result<HashMap<i64, i64>> {
-    //     if user_ids.is_empty() {
-    //         return Ok(HashMap::new());
-    //     }
-    //     let conn = self.conn.lock().unwrap();
-        
-    //     // 1. 获取这些用户的邮箱
-    //     let params_placeholders = user_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-    //     let sql = format!("SELECT id, email FROM users WHERE id IN ({})", params_placeholders);
-    //     let user_emails: HashMap<i64, String> = conn.prepare(&sql)?
-    //         .query_map(params_from_iter(user_ids.iter()), |row| Ok((row.get(0)?, row.get(1)?)))?
-    //         .collect::<Result<HashMap<_, _>, _>>()?;
 
-    //     if user_emails.is_empty() {
-    //         return Ok(HashMap::new());
-    //     }
 
-    //     // 2. 按邮箱查询邀请数量
-    //     let emails: Vec<String> = user_emails.values().cloned().collect();
-    //     let email_placeholders = emails.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-    //     let count_sql = format!(
-    //         "SELECT inviteBy, COUNT(*) FROM users WHERE inviteBy IN ({}) GROUP BY inviteBy",
-    //         email_placeholders
-    //     );
-
-    //     let email_counts: HashMap<String, i64> = conn.prepare(&count_sql)?
-    //         .query_map(params_from_iter(emails.iter()), |row| Ok((row.get(0)?, row.get(1)?)))?
-    //         .collect::<Result<HashMap<_, _>, _>>()?;
-
-    //     // 3. 结果映射回 user_id
-    //     let mut result_counts = HashMap::new();
-    //     for (user_id, email) in user_emails {
-    //         result_counts.insert(user_id, *email_counts.get(&email).unwrap_or(&0));
-    //     }
-
-    //     Ok(result_counts)
-    // }
-    //cargo warn
-
-    // 新增: 获取所有推荐关系作为 Map (被邀请人ID -> 邀请人ID)
+    // 获取所有推荐关系作为 Map (被邀请人ID -> 邀请人ID)
     pub fn get_all_referral_relationships_as_map(&self) -> Result<HashMap<i64, i64>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -420,10 +381,9 @@ impl Database {
         }).optional()
     }
 
-    // 获取用户信息 (用户端使用，不含敏感信息)
+    // 获取用户信息
     pub fn get_user_info(&self, user_id: i64) -> Result<Option<UserInfo>> {
         let conn = self.conn.lock().unwrap();
-        // 在 SELECT 查询中增加 gntx_balance 字段
         let mut stmt = conn.prepare(
             "SELECT id, nickname, email, inviteCode, inviteBy, exp, usdt_balance, ntx_balance, is_active, gntx_balance FROM users WHERE id = ?"
         )?;
@@ -438,12 +398,11 @@ impl Database {
                 usdt_balance: row.get(6)?,
                 ntx_balance: row.get(7)?,
                 is_active: row.get(8)?,
-                gntx_balance: row.get(9)?, // 新增：映射 gntx_balance
+                gntx_balance: row.get(9)?,
             })
         }).optional()
     }
 
-    // *** 新增函数：根据用户邮箱获取其邀请的用户数量 ***
     pub fn get_invited_user_count_by_email(&self, email: &str) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
         conn.query_row(
@@ -487,14 +446,6 @@ impl Database {
         Ok(tx.last_insert_rowid())
     }
 
-    // 新增: 管理员删除用户 (谨慎操作)
-    // pub fn delete_user(&self, user_id: i64) -> Result<()> {
-    //     let conn = self.conn.lock().unwrap();
-    //     // 在实际应用中，删除用户可能需要级联删除其所有相关数据
-    //     // 为了简化，这里只删除用户表中的记录
-    //     conn.execute("DELETE FROM users WHERE id = ?", params![user_id])?;
-    //     Ok(())
-    // }
     
     // 获取用户绑定的交易所信息
     pub fn get_user_exchanges(&self, user_id: i64) -> Result<Vec<ExchangeInfo>> {
@@ -536,13 +487,6 @@ impl Database {
         let mut stmt = conn.prepare("SELECT email FROM users WHERE inviteCode = ?")?;
         stmt.query_row(params![invite_code], |row| row.get(0)).optional()
     }
-
-    // 根据邀请码获取用户ID
-    // pub fn get_user_id_by_invite_code(&self, invite_code: &str) -> Result<Option<i64>> {
-    //     let conn = self.conn.lock().unwrap();
-    //     conn.query_row("SELECT id FROM users WHERE inviteCode = ?", params![invite_code], |row| row.get(0))
-    //         .optional()
-    // }
     
     // 更新用户密码
     pub fn update_user_password(&self, email: &str, new_password_hash: &str) -> Result<()> {
@@ -557,23 +501,6 @@ impl Database {
         Ok(())
     }
 
-    // 更新用户余额 (用于提现)
-    // pub fn update_user_balance(&self, user_id: i64, currency: &str, amount: f64) -> Result<()> {
-    //     let conn = self.conn.lock().unwrap();
-    //     let query = format!("UPDATE users SET {}_balance = {}_balance + ? WHERE id = ?", currency, currency);
-    //     conn.execute(&query, params![amount, user_id])?;
-    //     Ok(())
-    // }
-
-    // 创建提现订单
-    // pub fn create_withdrawal_order(&self, user_id: i64, user_email: &str, amount: f64, currency: &str, to_address: &str, created_at: &str) -> Result<()> {
-    //     let conn = self.conn.lock().unwrap();
-    //     conn.execute(
-    //         "INSERT INTO withdrawal_orders (user_id, user_email, amount, currency, to_address, is_confirmed, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    //         params![user_id, user_email, amount, currency, to_address, false, created_at],
-    //     )?;
-    //     Ok(())
-    // }
 
     // 验证码操作
     pub fn create_verification_code(&self, email: &str, code: &str, expires_at: &str) -> Result<()> {
@@ -596,12 +523,6 @@ impl Database {
         }).optional()
     }
 
-    // 删除验证码
-    // pub fn delete_verification_code(&self, email: &str) -> Result<()> {
-    //     let conn = self.conn.lock().unwrap();
-    //     conn.execute("DELETE FROM verification_codes WHERE email = ?", params![email])?;
-    //     Ok(())
-    // }
 
     // 重置码操作
     pub fn create_reset_code(&self, email: &str, code: &str, expires_at: &str) -> Result<()> {
@@ -672,7 +593,7 @@ impl Database {
         }).optional()
     }
 
-    // 新增: 获取历史平台数据 (日期范围)
+    // 获取历史平台数据 (日期范围)
     pub fn get_historical_platform_data(&self, start_date: &str, end_date: &str) -> Result<Vec<HistoricalPlatformData>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -776,22 +697,6 @@ impl Database {
         }).optional()
     }
 
-    // 更新或插入用户数据总览
-    // pub fn upsert_user_data(&self, user_id: i64, mining_output: f64, trading_cost: f64) -> Result<()> {
-    //     let conn = self.conn.lock().unwrap();
-    //     conn.execute(
-    //         r#"
-    //         INSERT INTO user_data (userId, totalMining, totalTradingCost)
-    //         VALUES (?1, ?2, ?3)
-    //         ON CONFLICT(userId) DO UPDATE SET
-    //             totalMining = totalMining + ?2,
-    //             totalTradingCost = totalTradingCost + ?3
-    //         "#,
-    //         params![user_id, mining_output, trading_cost],
-    //     )?;
-    //     Ok(())
-    // }
-
     // 获取每日用户数据
     pub fn get_daily_user_data(&self, user_id: i64, date: &str) -> Result<Option<DailyUserData>> {
         let conn = self.conn.lock().unwrap();
@@ -806,7 +711,7 @@ impl Database {
         }).optional()
     }
 
-    // 新增: 获取用户指定日期范围的每日数据
+    // 获取用户指定日期范围的每日数据
     pub fn get_daily_user_data_for_range(&self, user_id: i64, start_date: &str, end_date: &str) -> Result<Vec<DailyUserData>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -821,21 +726,6 @@ impl Database {
         Ok(data)
     }
 
-    // 更新或插入每日用户数据
-    // pub fn upsert_daily_user_data(&self, user_id: i64, date: &str, mining_output: f64, total_trading_cost: f64) -> Result<()> {
-    //     let conn = self.conn.lock().unwrap();
-    //     conn.execute(
-    //         r#"
-    //         INSERT INTO daily_user_data (userId, date, miningOutput, totalTradingCost)
-    //         VALUES (?1, ?2, ?3, ?4)
-    //         ON CONFLICT(userId, date) DO UPDATE SET
-    //             miningOutput = miningOutput + ?3,
-    //             totalTradingCost = totalTradingCost + ?4
-    //         "#,
-    //         params![user_id, date, mining_output, total_trading_cost],
-    //     )?;
-    //     Ok(())
-    // }
     // 获取特定日期的交易记录，以及必要的用户信息
     pub fn get_trades_and_user_info_for_date(&self, trade_date_str: &str) -> Result<Vec<TradeDataForSettlement>> {
         let conn = self.conn.lock().unwrap();
@@ -863,7 +753,7 @@ impl Database {
         Ok(trades)
     }
 
-    // 新增: 获取指定日期的所有用户交易记录
+    // 获取指定日期的所有用户交易记录
     pub fn get_all_daily_user_trades_for_date(&self, date: &str) -> Result<Vec<DailyUserTradeRecord>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -998,13 +888,6 @@ impl Database {
     }
 
 
-    // 如果尚未存在，你可能需要一个函数通过邮箱获取用户 ID 以用于推荐奖励
-    // pub fn get_user_id_by_email(&self, email: &str) -> Result<Option<i64>> {
-    //     let conn = self.conn.lock().unwrap();
-    //     conn.query_row("SELECT id FROM users WHERE email = ?", params![email], |row| row.get(0))
-    //         .optional()
-    // }
-
     // 获取挖矿排行榜前10名
     pub fn get_mining_leaderboard_top10(&self) -> Result<Vec<MiningLeaderboardEntry>> {
         let conn = self.conn.lock().unwrap();
@@ -1096,7 +979,7 @@ impl Database {
         Ok(records)
     }
 
-    // 新增: 获取所有推荐关系
+    // 获取所有推荐关系
     pub fn get_all_referral_relationships(&self) -> Result<Vec<ReferralRelationship>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -1126,7 +1009,7 @@ impl Database {
         Ok(relationships)
     }
 
-    // 新增: 获取所有佣金记录 (管理员用)
+    // 获取所有佣金记录 (管理员用)
     pub fn get_all_commission_records_admin(&self) -> Result<Vec<CommissionRecord>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -1152,7 +1035,7 @@ impl Database {
         Ok(records)
     }
 
-    // 新增: 按邀请人汇总佣金数据
+    // 按邀请人汇总佣金数据
     pub fn get_commission_summary_by_inviter(&self) -> Result<Vec<InviterCommissionSummary>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -1325,7 +1208,7 @@ impl Database {
         Ok(())
     }
 
-    // 新增: 获取财务汇总数据
+    // 获取财务汇总数据
     pub fn get_financial_summary(&self) -> Result<FinancialSummary> {
         let conn = self.conn.lock().unwrap();
         
@@ -1485,7 +1368,7 @@ impl Database {
         }
     }
 
-    // 新增: 获取所有 DAO 拍卖历史 (管理员用)
+    // 获取所有 DAO 拍卖历史 (管理员用)
     pub fn get_all_dao_auctions(&self) -> Result<Vec<DaoAuction>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -1665,7 +1548,7 @@ impl Database {
         )?;
         Ok(())
     }
-    // 新增: 获取所有用户及其绑定的 BSC 地址和 GNTX 数量
+    // 获取所有用户及其绑定的 BSC 地址和 GNTX 数量
     pub fn get_all_user_bsc_addresses_with_gntx(&self) -> Result<Vec<UserGNTXInfo>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -1722,7 +1605,7 @@ impl Database {
             Ok(UserExchangeBindingInfo {
                 exchange_uid: row.get(0)?,
                 user_id: row.get(1)?,
-                email: row.get(2)?, // 新增: 获取 email 数据
+                email: row.get(2)?, // 获取 email 数据
             })
         })?.collect::<Result<Vec<_>, _>>()?;
         Ok(users)
@@ -1736,48 +1619,21 @@ impl Database {
             |row| row.get(0)
         )
     }
-// 新增：获取NTX分配控制的设置
 
-
-    // 新增：获取NTX分配控制的目标百分比
-    // pub fn get_ntx_control_percentage(&self) -> Result<f64> {
-    //     let conn = self.conn.lock().unwrap();
-    //     // 如果表或值不存在，默认为90.0
-    //     conn.query_row(
-    //         "SELECT admin_fee_percentage FROM ntx_control_settings WHERE id = 1",
-    //         [],
-    //         |row| row.get(0),
-    //     )
-    //     .optional()
-    //     .map(|res| res.unwrap_or(Ok(90.0)))? // Provide a default if the query returns no rows
-    //     .map_err(|e| e.into())
-    // }
-    // pub fn get_ntx_control_percentage(&self) -> Result<f64> {
-    //     let conn = self.conn.lock().unwrap();
-    //     // 如果表或值不存在，默认为90.0
-    //     conn.query_row(
-    //         "SELECT admin_fee_percentage FROM ntx_control_settings WHERE id = 1",
-    //         [],
-    //         |row| Ok(row.get(0)?), // <-- 修改1：使用 '?' 解包 row.get(0)，然后用 Ok() 包装解包后的 f64
-    //     )
-    //     .optional()
-    //     .map(|res| res.unwrap_or(90.0))? // <-- 修改2：现在 res 是 Option<f64>，直接 unwrap_or(90.0) 得到 f64
-    //     .map_err(|e| e.into())
-    // }//fixed
     pub fn get_ntx_control_percentage(&self) -> Result<f64> {
-    let conn = self.conn.lock().unwrap();
-    // 如果表或值不存在，默认为90.0
-    conn.query_row(
-        "SELECT admin_fee_percentage FROM ntx_control_settings WHERE id = 1",
-        [],
-        |row| Ok(row.get(0)?), // 闭包返回 Result<f64, rusqlite::Error>
-    )
-    .optional() // 返回 Result<Option<f64>, rusqlite::Error>
-    .map(|res| res.unwrap_or(90.0)) // 返回 Result<f64, rusqlite::Error>
-    // <-- 在这里不再需要 .map_err()，因为最终的 Result 会被 ? 操作符处理
-} // 函数的返回值是 Result<f64>，这里隐式返回了上面链式调用的 Result<f64, rusqlite::Error>
+        let conn = self.conn.lock().unwrap();
+        // 如果表或值不存在，默认为90.0
+        conn.query_row(
+            "SELECT admin_fee_percentage FROM ntx_control_settings WHERE id = 1",
+            [],
+            |row| Ok(row.get(0)?), // 闭包返回 Result<f64, rusqlite::Error>
+        )
+        .optional() // 返回 Result<Option<f64>, rusqlite::Error>
+        .map(|res| res.unwrap_or(90.0)) // 返回 Result<f64, rusqlite::Error>
+        // <-- 在这里不再需要 .map_err()，因为最终的 Result 会被 ? 操作符处理
+    } // 函数的返回值是 Result<f64>，这里隐式返回了上面链式调用的 Result<f64, rusqlite::Error>
 
-    // 新增：更新NTX分配控制的目标百分比 (用于Admin后台)
+    // 更新NTX分配控制的目标百分比 (用于Admin后台)
     pub fn update_ntx_control_percentage(&self, percentage: f64) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
@@ -1787,7 +1643,7 @@ impl Database {
         Ok(())
     }
 
-    // 新增：获取所有管理员用户的ID
+    // 获取所有管理员用户的ID
     pub fn get_all_admin_user_ids(&self) -> Result<Vec<i64>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare("SELECT id FROM users WHERE is_admin = TRUE")?;
@@ -1796,7 +1652,7 @@ impl Database {
         Ok(ids)
     }
 
-    // 新增：获取指定日期的总手续费（可按是否为管理员筛选）
+    // 获取指定日期的总手续费（可按是否为管理员筛选）
     pub fn get_total_fees_for_date(&self, trade_date: &str, admins_only: bool) -> Result<f64> {
         let conn = self.conn.lock().unwrap();
         let sql = if admins_only {
@@ -1813,7 +1669,7 @@ impl Database {
         Ok(total_fees)
     }
 
-    // 新增: 在一个事务中批量添加虚假的管理员交易数据
+    // 在一个事务中批量添加虚假的管理员交易数据
     pub fn add_fake_admin_trades_in_transaction(&self, trades: &[FakeTradeData]) -> Result<()> {
         let mut conn = self.conn.lock().unwrap();
         let tx = conn.transaction()?;
@@ -1835,7 +1691,7 @@ impl Database {
         tx.commit()
     }
 
-//KOL相关
+    //KOL相关
     pub fn upsert_kol(&self, user_id: i64, commission_rate: f64, is_active: bool) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         let current_time = Utc::now().to_rfc3339();
@@ -1893,7 +1749,7 @@ impl Database {
         kols_iter.collect::<Result<Vec<_>, _>>()
     }
     
-    // 【核心】为结算逻辑获取所有活跃的KOL，并以HashMap形式返回
+    // 为结算逻辑获取所有活跃的KOL，并以HashMap形式返回
     pub fn get_active_kols_as_map(&self) -> Result<HashMap<i64, f64>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -1907,9 +1763,32 @@ impl Database {
     }
 
 
+    //重新实现部分逻辑转移handler到数据库
+    // 在事务中更新用户余额
+    pub fn update_user_balance_in_tx(&self, tx: &Transaction, user_id: i64, new_balance: f64, currency: &str) -> Result<()> {
+        let query = format!("UPDATE users SET {}_balance = ? WHERE id = ?", currency.to_lowercase());
+        tx.execute(&query, params![new_balance, user_id])?;
+        Ok(())
+    }
+    // 在事务中创建提现订单
+    pub fn create_withdrawal_order_in_tx(&self, tx: &Transaction, user_id: i64, user_email: &str, amount: i64, currency: &str, to_address: &str, created_at: &str) -> Result<()> {
+        tx.execute(
+            "INSERT INTO withdrawal_orders (user_id, user_email, amount, currency, to_address, is_confirmed, created_at, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')",
+            params![user_id, user_email, amount, currency, to_address, false, created_at],
+        )?;
+        Ok(())
+    }
+    // 在事务中删除验证码
+    pub fn delete_verification_code_in_tx(&self, tx: &Transaction, email: &str) -> Result<()> {
+        tx.execute("DELETE FROM verification_codes WHERE email = ?", params![email])?;
+        Ok(())
+    }
+
 
 }
-// 交易所信息结构体
+
+
+//struct
 #[derive(Debug, Serialize)]
 pub struct ExchangeInfo {
     pub id: i64,
@@ -1952,7 +1831,7 @@ pub struct UserInfo {
     pub gntx_balance: f64,
 }
 
-//  用户完整信息结构体 (用于管理员)
+// 用户完整信息结构体 (用于管理员)
 #[derive(Debug, Serialize)]
 pub struct UserFullInfo {
     pub id: i64,
@@ -1994,22 +1873,18 @@ pub struct DailyUserData {
 #[derive(Debug)]
 pub struct TradeDataForSettlement {
     pub user_id: i64,
-    //pub user_email: String,
-    //pub inviter_id: Option<i64>,
     pub exchange_id: i64,
     pub fee_usdt: f64,
     pub trade_volume_usdt: f64,
-    //pub trade_date: String,
 }
 
-// MODIFIED: This struct is updated to hold all earnings for a user for a given day.
 #[derive(Debug, Default, Clone)]
 pub struct DailyUserRebate {
-    pub ntx_rebate: f64,              // User's own NTX from trading
-    pub usdt_rebate: f64,             // User's own USDT from trading
-    pub ntx_bonus_earned: f64,        // NTX bonus earned as an inviter
-    pub usdt_bonus_earned: f64,       // USDT bonus earned as an inviter
-    pub total_fees_incurred: f64,     // Total fees the user generated (for logging and EXP)
+    pub ntx_rebate: f64,
+    pub usdt_rebate: f64,
+    pub ntx_bonus_earned: f64,
+    pub usdt_bonus_earned: f64,
+    pub total_fees_incurred: f64,
 }
 
 
@@ -2085,7 +1960,6 @@ pub struct UserGNTXInfo {
 pub struct AdminDashboardData {
     pub pending_withdrawals: i64,
     pub new_users_today: i64,
-    // 新增平台总数据字段
     #[serde(rename = "totalMined")]
     pub total_mined: f64,
     #[serde(rename = "totalCommission")]
@@ -2098,7 +1972,7 @@ pub struct AdminDashboardData {
     pub platform_users: i64,
 }
 
-// 学院文章结构体 (完整版)
+// 学院文章结构体
 #[derive(Debug, Serialize)]
 pub struct AcademyArticle {
     pub id: i64,
@@ -2131,7 +2005,7 @@ pub struct AcademyArticleSummary {
     pub is_displayed: bool,
 }
 
-// 新增: 历史平台数据结构体
+// 历史平台数据结构体
 #[derive(Debug, Serialize)]
 pub struct HistoricalPlatformData {
     pub date: String,
@@ -2144,7 +2018,7 @@ pub struct HistoricalPlatformData {
     pub miners: i64,
 }
 
-// 新增: 每日用户交易记录结构体
+// 每日用户交易记录结构体
 #[derive(Debug, Serialize)]
 pub struct DailyUserTradeRecord {
     pub id: i64,
@@ -2166,7 +2040,7 @@ pub struct DailyUserTradeRecord {
     pub created_at: String,
 }
 
-// 新增: 推荐关系结构体
+// 推荐关系结构体
 #[derive(Debug, Serialize)]
 pub struct ReferralRelationship {
     #[serde(rename = "inviterId")]
@@ -2183,7 +2057,7 @@ pub struct ReferralRelationship {
     pub invited_at: String,
 }
 
-// 新增: 邀请人佣金汇总结构体
+// 邀请人佣金汇总结构体
 #[derive(Debug, Serialize)]
 pub struct InviterCommissionSummary {
     #[serde(rename = "inviterEmail")]
@@ -2194,7 +2068,7 @@ pub struct InviterCommissionSummary {
     pub total_ntx_commission: f64,
 }
 
-// 新增: 财务汇总结构体
+// 财务汇总结构体
 #[derive(Debug, Serialize)]
 pub struct FinancialSummary {
     #[serde(rename = "totalUsdtInSystem")]
@@ -2236,8 +2110,8 @@ pub struct FakeTradeData {
 #[derive(Debug, Serialize)]
 pub struct KolInfo {
     pub user_id: i64,
-    pub nickname: String, // 为了方便前端展示，我们连表查询
-    pub email: String,    // 同上
+    pub nickname: String,
+    pub email: String,
     pub commission_rate: f64,
     pub is_active: bool,
     pub created_at: String,
