@@ -3,15 +3,15 @@ use chrono::{Utc, Duration as ChronoDuration};
 use rand::Rng;
 use bcrypt::{hash, verify, DEFAULT_COST};
 use regex::Regex;
-use chrono_tz::Asia::Shanghai; // 用于 UTC+8
+//use chrono_tz::Asia::Shanghai; // 用于 UTC+8
 
 
 // 辅助函数：获取“昨天”的日期字符串，格式为YYYY-MM-DD，考虑 UTC+8
-pub fn get_yesterday_trade_date_utc8() -> String {
-    let now_utc8 = Utc::now().with_timezone(&Shanghai); // 当前时间（UTC+8）
-    let yesterday_utc8 = now_utc8 - ChronoDuration::days(1);
-    yesterday_utc8.format("%Y-%m-%d").to_string()
-}
+// pub fn get_yesterday_trade_date_utc8() -> String {
+//     let now_utc8 = Utc::now().with_timezone(&Shanghai); // 当前时间（UTC+8）
+//     let yesterday_utc8 = now_utc8 - ChronoDuration::days(1);
+//     yesterday_utc8.format("%Y-%m-%d").to_string()
+// }
 
 
 pub fn is_valid_email(email: &str) -> bool {

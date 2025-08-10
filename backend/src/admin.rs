@@ -72,11 +72,7 @@ pub struct UpdateExchangeRequest {
     pub cex_url: String,
 }
 
-// 新增：删除交易所请求体
-#[derive(Deserialize)]
-pub struct DeleteExchangeRequest {
-    pub id: i64,
-}
+
 
 // 新增：创建文章请求体 (已存在)
 #[derive(Deserialize)]
@@ -102,11 +98,7 @@ pub struct UpdateArticleRequest {
     pub content: String, // Markdown 格式
 }
 
-// 新增：删除文章请求体
-#[derive(Deserialize)]
-pub struct DeleteArticleRequest {
-    pub id: i64,
-}
+
 
 
 #[derive(Deserialize)]
@@ -402,27 +394,6 @@ pub async fn get_user_full_info(
         },
     }
 }
-
-//管理员删除用户
-// #[delete("/users/{user_id}")]
-// pub async fn delete_user_by_admin(
-//     db: web::Data<Database>,
-//     path: web::Path<i64>,
-// ) -> impl Responder {
-//     let user_id = path.into_inner();
-//     println!("API Info: /api/admin/users/{} - 收到删除用户请求。", user_id);
-
-//     match db.delete_user(user_id) {
-//         Ok(_) => {
-//             println!("API Success: /api/admin/users/{} - 用户删除成功。", user_id);
-//             HttpResponse::Ok().json(serde_json::json!({"message": "用户删除成功"}))
-//         },
-//         Err(e) => {
-//             eprintln!("API Error: /api/admin/users/{} - 删除用户失败: {:?}", user_id, e);
-//             HttpResponse::InternalServerError().json(serde_json::json!({"error": "删除用户失败"}))
-//         },
-//     }
-// }
 
 
 // 获取指定用户绑定的交易所

@@ -75,7 +75,7 @@ pub async fn trigger_daily_settlement_logic(
         db.get_trades_and_user_info_for_date(&trade_date_str),
         db.get_exchanges(),
         db.get_all_referral_relationships_as_map(),
-        db.get_active_kols_as_map(), // 【KOL功能】获取当前生效的KOL列表及其费率
+        db.get_active_kols_as_map(), 
     ) {
         (Ok(pd), Ok(tr), Ok(ex), Ok(re),Ok(kols)) => (
             pd,
@@ -101,7 +101,8 @@ pub async fn trigger_daily_settlement_logic(
 
     // --- 2. 数据预处理与聚合 ---
     // 使用 Set 去重，获取所有参与交易的用户ID
-    let trader_ids: Vec<i64> = trades_for_settlement.iter().map(|t| t.user_id).collect::<HashSet<_>>().into_iter().collect();
+    //let trader_ids: Vec<i64> = trades_for_settlement.iter().map(|t| t.user_id).collect::<HashSet<_>>().into_iter().collect();
+    //cargo warn
 
     // 找到所有今天有下线交易的用户ID
     let mut users_with_trading_downlines: HashSet<i64> = HashSet::new();
@@ -142,11 +143,12 @@ pub async fn trigger_daily_settlement_logic(
         user_earning_entry.total_fees_incurred += total_fee;
 
         // a. 计算交易者自己的 USDT 返佣
-        let is_trader_broker = *broker_status_cache
-            .entry(trader_id)
-            .or_insert_with(|| db.is_broker(trader_id).unwrap_or(false));
-        let has_trading_downline_today = users_with_trading_downlines.contains(&trader_id);
-        
+        // let is_trader_broker = *broker_status_cache
+        //     .entry(trader_id)
+        //     .or_insert_with(|| db.is_broker(trader_id).unwrap_or(false));
+        // let has_trading_downline_today = users_with_trading_downlines.contains(&trader_id);
+        //cargo warn
+
         // 只有当交易者是经纪商，或者他/她的下线今天有交易时，他/她才能获得自己交易的 USDT 返佣
         // if is_trader_broker || has_trading_downline_today {
         //     let user_actual_usdt_rebate = raw_usdt_rebate_from_exchange * 0.60;

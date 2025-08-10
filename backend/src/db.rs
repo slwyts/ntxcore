@@ -1,5 +1,5 @@
 // src/db.rs
-use rusqlite::{Connection, Result, params, params_from_iter, OptionalExtension, Transaction, Error as RusqliteError};
+use rusqlite::{Connection, Result, params, /*params_from_iter ,*/ OptionalExtension, Transaction, Error as RusqliteError};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
@@ -331,44 +331,45 @@ impl Database {
         })
     }
     
-    // 新增: 获取多个用户的邀请数量
-    pub fn get_invited_user_counts(&self, user_ids: &[i64]) -> Result<HashMap<i64, i64>> {
-        if user_ids.is_empty() {
-            return Ok(HashMap::new());
-        }
-        let conn = self.conn.lock().unwrap();
+    // 获取多个用户的邀请数量
+    // pub fn get_invited_user_counts(&self, user_ids: &[i64]) -> Result<HashMap<i64, i64>> {
+    //     if user_ids.is_empty() {
+    //         return Ok(HashMap::new());
+    //     }
+    //     let conn = self.conn.lock().unwrap();
         
-        // 1. 获取这些用户的邮箱
-        let params_placeholders = user_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-        let sql = format!("SELECT id, email FROM users WHERE id IN ({})", params_placeholders);
-        let user_emails: HashMap<i64, String> = conn.prepare(&sql)?
-            .query_map(params_from_iter(user_ids.iter()), |row| Ok((row.get(0)?, row.get(1)?)))?
-            .collect::<Result<HashMap<_, _>, _>>()?;
+    //     // 1. 获取这些用户的邮箱
+    //     let params_placeholders = user_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    //     let sql = format!("SELECT id, email FROM users WHERE id IN ({})", params_placeholders);
+    //     let user_emails: HashMap<i64, String> = conn.prepare(&sql)?
+    //         .query_map(params_from_iter(user_ids.iter()), |row| Ok((row.get(0)?, row.get(1)?)))?
+    //         .collect::<Result<HashMap<_, _>, _>>()?;
 
-        if user_emails.is_empty() {
-            return Ok(HashMap::new());
-        }
+    //     if user_emails.is_empty() {
+    //         return Ok(HashMap::new());
+    //     }
 
-        // 2. 按邮箱查询邀请数量
-        let emails: Vec<String> = user_emails.values().cloned().collect();
-        let email_placeholders = emails.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-        let count_sql = format!(
-            "SELECT inviteBy, COUNT(*) FROM users WHERE inviteBy IN ({}) GROUP BY inviteBy",
-            email_placeholders
-        );
+    //     // 2. 按邮箱查询邀请数量
+    //     let emails: Vec<String> = user_emails.values().cloned().collect();
+    //     let email_placeholders = emails.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    //     let count_sql = format!(
+    //         "SELECT inviteBy, COUNT(*) FROM users WHERE inviteBy IN ({}) GROUP BY inviteBy",
+    //         email_placeholders
+    //     );
 
-        let email_counts: HashMap<String, i64> = conn.prepare(&count_sql)?
-            .query_map(params_from_iter(emails.iter()), |row| Ok((row.get(0)?, row.get(1)?)))?
-            .collect::<Result<HashMap<_, _>, _>>()?;
+    //     let email_counts: HashMap<String, i64> = conn.prepare(&count_sql)?
+    //         .query_map(params_from_iter(emails.iter()), |row| Ok((row.get(0)?, row.get(1)?)))?
+    //         .collect::<Result<HashMap<_, _>, _>>()?;
 
-        // 3. 结果映射回 user_id
-        let mut result_counts = HashMap::new();
-        for (user_id, email) in user_emails {
-            result_counts.insert(user_id, *email_counts.get(&email).unwrap_or(&0));
-        }
+    //     // 3. 结果映射回 user_id
+    //     let mut result_counts = HashMap::new();
+    //     for (user_id, email) in user_emails {
+    //         result_counts.insert(user_id, *email_counts.get(&email).unwrap_or(&0));
+    //     }
 
-        Ok(result_counts)
-    }
+    //     Ok(result_counts)
+    // }
+    //cargo warn
 
     // 新增: 获取所有推荐关系作为 Map (被邀请人ID -> 邀请人ID)
     pub fn get_all_referral_relationships_as_map(&self) -> Result<HashMap<i64, i64>> {
@@ -487,13 +488,13 @@ impl Database {
     }
 
     // 新增: 管理员删除用户 (谨慎操作)
-    pub fn delete_user(&self, user_id: i64) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        // 在实际应用中，删除用户可能需要级联删除其所有相关数据
-        // 为了简化，这里只删除用户表中的记录
-        conn.execute("DELETE FROM users WHERE id = ?", params![user_id])?;
-        Ok(())
-    }
+    // pub fn delete_user(&self, user_id: i64) -> Result<()> {
+    //     let conn = self.conn.lock().unwrap();
+    //     // 在实际应用中，删除用户可能需要级联删除其所有相关数据
+    //     // 为了简化，这里只删除用户表中的记录
+    //     conn.execute("DELETE FROM users WHERE id = ?", params![user_id])?;
+    //     Ok(())
+    // }
     
     // 获取用户绑定的交易所信息
     pub fn get_user_exchanges(&self, user_id: i64) -> Result<Vec<ExchangeInfo>> {
@@ -537,11 +538,11 @@ impl Database {
     }
 
     // 根据邀请码获取用户ID
-    pub fn get_user_id_by_invite_code(&self, invite_code: &str) -> Result<Option<i64>> {
-        let conn = self.conn.lock().unwrap();
-        conn.query_row("SELECT id FROM users WHERE inviteCode = ?", params![invite_code], |row| row.get(0))
-            .optional()
-    }
+    // pub fn get_user_id_by_invite_code(&self, invite_code: &str) -> Result<Option<i64>> {
+    //     let conn = self.conn.lock().unwrap();
+    //     conn.query_row("SELECT id FROM users WHERE inviteCode = ?", params![invite_code], |row| row.get(0))
+    //         .optional()
+    // }
     
     // 更新用户密码
     pub fn update_user_password(&self, email: &str, new_password_hash: &str) -> Result<()> {
@@ -557,22 +558,22 @@ impl Database {
     }
 
     // 更新用户余额 (用于提现)
-    pub fn update_user_balance(&self, user_id: i64, currency: &str, amount: f64) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        let query = format!("UPDATE users SET {}_balance = {}_balance + ? WHERE id = ?", currency, currency);
-        conn.execute(&query, params![amount, user_id])?;
-        Ok(())
-    }
+    // pub fn update_user_balance(&self, user_id: i64, currency: &str, amount: f64) -> Result<()> {
+    //     let conn = self.conn.lock().unwrap();
+    //     let query = format!("UPDATE users SET {}_balance = {}_balance + ? WHERE id = ?", currency, currency);
+    //     conn.execute(&query, params![amount, user_id])?;
+    //     Ok(())
+    // }
 
     // 创建提现订单
-    pub fn create_withdrawal_order(&self, user_id: i64, user_email: &str, amount: f64, currency: &str, to_address: &str, created_at: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute(
-            "INSERT INTO withdrawal_orders (user_id, user_email, amount, currency, to_address, is_confirmed, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            params![user_id, user_email, amount, currency, to_address, false, created_at],
-        )?;
-        Ok(())
-    }
+    // pub fn create_withdrawal_order(&self, user_id: i64, user_email: &str, amount: f64, currency: &str, to_address: &str, created_at: &str) -> Result<()> {
+    //     let conn = self.conn.lock().unwrap();
+    //     conn.execute(
+    //         "INSERT INTO withdrawal_orders (user_id, user_email, amount, currency, to_address, is_confirmed, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    //         params![user_id, user_email, amount, currency, to_address, false, created_at],
+    //     )?;
+    //     Ok(())
+    // }
 
     // 验证码操作
     pub fn create_verification_code(&self, email: &str, code: &str, expires_at: &str) -> Result<()> {
@@ -596,11 +597,11 @@ impl Database {
     }
 
     // 删除验证码
-    pub fn delete_verification_code(&self, email: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute("DELETE FROM verification_codes WHERE email = ?", params![email])?;
-        Ok(())
-    }
+    // pub fn delete_verification_code(&self, email: &str) -> Result<()> {
+    //     let conn = self.conn.lock().unwrap();
+    //     conn.execute("DELETE FROM verification_codes WHERE email = ?", params![email])?;
+    //     Ok(())
+    // }
 
     // 重置码操作
     pub fn create_reset_code(&self, email: &str, code: &str, expires_at: &str) -> Result<()> {
@@ -776,20 +777,20 @@ impl Database {
     }
 
     // 更新或插入用户数据总览
-    pub fn upsert_user_data(&self, user_id: i64, mining_output: f64, trading_cost: f64) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute(
-            r#"
-            INSERT INTO user_data (userId, totalMining, totalTradingCost)
-            VALUES (?1, ?2, ?3)
-            ON CONFLICT(userId) DO UPDATE SET
-                totalMining = totalMining + ?2,
-                totalTradingCost = totalTradingCost + ?3
-            "#,
-            params![user_id, mining_output, trading_cost],
-        )?;
-        Ok(())
-    }
+    // pub fn upsert_user_data(&self, user_id: i64, mining_output: f64, trading_cost: f64) -> Result<()> {
+    //     let conn = self.conn.lock().unwrap();
+    //     conn.execute(
+    //         r#"
+    //         INSERT INTO user_data (userId, totalMining, totalTradingCost)
+    //         VALUES (?1, ?2, ?3)
+    //         ON CONFLICT(userId) DO UPDATE SET
+    //             totalMining = totalMining + ?2,
+    //             totalTradingCost = totalTradingCost + ?3
+    //         "#,
+    //         params![user_id, mining_output, trading_cost],
+    //     )?;
+    //     Ok(())
+    // }
 
     // 获取每日用户数据
     pub fn get_daily_user_data(&self, user_id: i64, date: &str) -> Result<Option<DailyUserData>> {
@@ -821,52 +822,42 @@ impl Database {
     }
 
     // 更新或插入每日用户数据
-    pub fn upsert_daily_user_data(&self, user_id: i64, date: &str, mining_output: f64, total_trading_cost: f64) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute(
-            r#"
-            INSERT INTO daily_user_data (userId, date, miningOutput, totalTradingCost)
-            VALUES (?1, ?2, ?3, ?4)
-            ON CONFLICT(userId, date) DO UPDATE SET
-                miningOutput = miningOutput + ?3,
-                totalTradingCost = totalTradingCost + ?4
-            "#,
-            params![user_id, date, mining_output, total_trading_cost],
-        )?;
-        Ok(())
-    }
-    
-    // REMOVED: get_level_rebate_percentage is no longer needed.
-    // pub fn get_level_rebate_percentage(&self, exp: i64) -> f64 { ... }
-
+    // pub fn upsert_daily_user_data(&self, user_id: i64, date: &str, mining_output: f64, total_trading_cost: f64) -> Result<()> {
+    //     let conn = self.conn.lock().unwrap();
+    //     conn.execute(
+    //         r#"
+    //         INSERT INTO daily_user_data (userId, date, miningOutput, totalTradingCost)
+    //         VALUES (?1, ?2, ?3, ?4)
+    //         ON CONFLICT(userId, date) DO UPDATE SET
+    //             miningOutput = miningOutput + ?3,
+    //             totalTradingCost = totalTradingCost + ?4
+    //         "#,
+    //         params![user_id, date, mining_output, total_trading_cost],
+    //     )?;
+    //     Ok(())
+    // }
     // 获取特定日期的交易记录，以及必要的用户信息
     pub fn get_trades_and_user_info_for_date(&self, trade_date_str: &str) -> Result<Vec<TradeDataForSettlement>> {
         let conn = self.conn.lock().unwrap();
+        // SQL查询不再关联用户表，变得更高效
         let mut stmt = conn.prepare(
             r#"
             SELECT
-                dut.user_id,
-                u.email,
-                u_inviter.id AS inviter_id,
-                dut.exchange_id,
-                dut.fee_usdt,
-                dut.trade_volume_usdt,
-                dut.trade_date
-            FROM daily_user_trades dut
-            JOIN users u ON dut.user_id = u.id
-            LEFT JOIN users u_inviter ON u.inviteBy = u_inviter.email
-            WHERE dut.trade_date = ?
+                user_id,
+                exchange_id,
+                fee_usdt,
+                trade_volume_usdt
+            FROM daily_user_trades
+            WHERE trade_date = ?
             "#
         )?;
+        // 结果映射也相应简化
         let trades = stmt.query_map(params![trade_date_str], |row| {
             Ok(TradeDataForSettlement {
                 user_id: row.get(0)?,
-                user_email: row.get(1)?,
-                inviter_id: row.get(2).ok(),
-                exchange_id: row.get(3)?,
-                fee_usdt: row.get(4)?,
-                trade_volume_usdt: row.get(5)?,
-                trade_date: row.get(6)?,
+                exchange_id: row.get(1)?,
+                fee_usdt: row.get(2)?,
+                trade_volume_usdt: row.get(3)?,
             })
         })?.collect::<Result<Vec<_>, _>>()?;
         Ok(trades)
@@ -1008,11 +999,11 @@ impl Database {
 
 
     // 如果尚未存在，你可能需要一个函数通过邮箱获取用户 ID 以用于推荐奖励
-    pub fn get_user_id_by_email(&self, email: &str) -> Result<Option<i64>> {
-        let conn = self.conn.lock().unwrap();
-        conn.query_row("SELECT id FROM users WHERE email = ?", params![email], |row| row.get(0))
-            .optional()
-    }
+    // pub fn get_user_id_by_email(&self, email: &str) -> Result<Option<i64>> {
+    //     let conn = self.conn.lock().unwrap();
+    //     conn.query_row("SELECT id FROM users WHERE email = ?", params![email], |row| row.get(0))
+    //         .optional()
+    // }
 
     // 获取挖矿排行榜前10名
     pub fn get_mining_leaderboard_top10(&self) -> Result<Vec<MiningLeaderboardEntry>> {
@@ -2000,16 +1991,15 @@ pub struct DailyUserData {
     pub total_trading_cost: f64, 
 }
 
-// MODIFIED: This struct now holds inviter_id instead of inviter_email and no longer needs current_exp
 #[derive(Debug)]
 pub struct TradeDataForSettlement {
     pub user_id: i64,
-    pub user_email: String,
-    pub inviter_id: Option<i64>,
+    //pub user_email: String,
+    //pub inviter_id: Option<i64>,
     pub exchange_id: i64,
     pub fee_usdt: f64,
     pub trade_volume_usdt: f64,
-    pub trade_date: String,
+    //pub trade_date: String,
 }
 
 // MODIFIED: This struct is updated to hold all earnings for a user for a given day.

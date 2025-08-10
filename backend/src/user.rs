@@ -58,6 +58,7 @@ pub struct WithdrawRequest {
     pub to_address: String,
 }
 
+#[allow(dead_code)]
 #[derive(Deserialize)]
 pub struct BindBscAddressRequest {
     #[serde(rename = "bscAddress")]
@@ -362,13 +363,11 @@ pub async fn want_withdraw_ntx(
             return HttpResponse::InternalServerError().finish();
         },
     };
-// <<<<<< MODIFIED SECTION START >>>>>>
     let user_info = match tx.query_row(
-        // 在 SELECT 查询中增加 gntx_balance 字段
         "SELECT id, nickname, email, inviteCode, inviteBy, exp, usdt_balance, ntx_balance, is_active, gntx_balance FROM users WHERE id = ?",
         params![user_id],
         |row| {
-            Ok(UserInfo { // crate::db::UserInfo
+            Ok(UserInfo { 
                 id: row.get(0)?,
                 nickname: row.get(1)?,
                 email: row.get(2)?,
@@ -378,7 +377,7 @@ pub async fn want_withdraw_ntx(
                 usdt_balance: row.get(6)?,
                 ntx_balance: row.get(7)?,
                 is_active: row.get(8)?,
-                gntx_balance: row.get(9)?, // 这行已经正确
+                gntx_balance: row.get(9)?, 
             })
         },
     ){
@@ -394,7 +393,6 @@ pub async fn want_withdraw_ntx(
             return HttpResponse::InternalServerError().finish();
         },
     };
-    // <<<<<< MODIFIED SECTION END >>>>>>
 
     if user_info.ntx_balance < withdraw_req.amount as f64 {
         eprintln!("API Error: /api/user/want_withdraw_ntx - 用户 {} NTX余额不足。余额: {}, 提现: {}", user_id, user_info.ntx_balance, withdraw_req.amount);
