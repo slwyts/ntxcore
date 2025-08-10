@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use chrono::{Utc};
 use rusqlite::ffi; // Import ffi for custom error creation
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 pub struct Database {
     pub conn: Arc<Mutex<Connection>>,

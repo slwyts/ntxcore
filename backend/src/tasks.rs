@@ -4,7 +4,6 @@ use chrono::Timelike;
 use actix_web::web::Data;
 use crate::db::Database;
 // use crate::settlement::{trigger_daily_settlement, force_ntx_control};
-use actix_web::web;
 
 pub async fn start_scheduled_tasks(db: Data<Database>) {
     let db_clone = db.clone();

@@ -7,7 +7,6 @@ use crate::utils::{is_valid_date, get_current_utc_time_string, is_valid_evm_addr
 // gntx
 // GNTX 数据库操作底层函数，供 gntx_sync 调用
 use crate::db::UserGNTXInfo;
-use anyhow::anyhow;
 
 /// 获取所有用户 GNTX 信息（底层函数，非 handler）
 pub fn db_get_all_user_gntx_info(db: &Database) -> Result<Vec<UserGNTXInfo>, anyhow::Error> {
