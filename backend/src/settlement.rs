@@ -99,11 +99,6 @@ pub async fn trigger_daily_settlement_logic(
         return Ok(());
     }
 
-    // --- 2. 数据预处理与聚合 ---
-    // 使用 Set 去重，获取所有参与交易的用户ID
-    //let trader_ids: Vec<i64> = trades_for_settlement.iter().map(|t| t.user_id).collect::<HashSet<_>>().into_iter().collect();
-    //cargo warn
-
     // 找到所有今天有下线交易的用户ID
     let mut users_with_trading_downlines: HashSet<i64> = HashSet::new();
     for trade in &trades_for_settlement {
@@ -142,20 +137,8 @@ pub async fn trigger_daily_settlement_logic(
         let user_earning_entry = final_earnings.entry(trader_id).or_default();
         user_earning_entry.total_fees_incurred += total_fee;
 
-        // a. 计算交易者自己的 USDT 返佣
-        // let is_trader_broker = *broker_status_cache
-        //     .entry(trader_id)
-        //     .or_insert_with(|| db.is_broker(trader_id).unwrap_or(false));
-        // let has_trading_downline_today = users_with_trading_downlines.contains(&trader_id);
-        //cargo warn
 
-        // 只有当交易者是经纪商，或者他/她的下线今天有交易时，他/她才能获得自己交易的 USDT 返佣
-        // if is_trader_broker || has_trading_downline_today {
-        //     let user_actual_usdt_rebate = raw_usdt_rebate_from_exchange * 0.60;
-        //     user_earning_entry.usdt_rebate += user_actual_usdt_rebate;
-        // }
-
-        // b. 计算交易者自己的 NTX 返佣 (以及其直接上级的 NTX 奖励)
+        // 计算交易者自己的 NTX 返佣 (以及其直接上级的 NTX 奖励)
         let ntx_rebate_total = if platform_total_fees_for_day > 0.0 {
             (total_fee / platform_total_fees_for_day) * daily_ntx_supply_for_today
         } else { 0.0 };
@@ -188,13 +171,13 @@ pub async fn trigger_daily_settlement_logic(
             }
         }
 
-        // --- c. 【重构后的Upline奖励与KOL奖励计算】---
+        // --- 【重构后的Upline奖励与KOL奖励计算】---
         let mut bonus_20_pct_claimed = false;
         let mut platform_bonus_10_pct_claimed = false;
         let mut current_user_id = trader_id;
         let mut is_first_level = true;
 
-        // 【新逻辑】为KOL计算引入的变量
+        // 为KOL计算引入的变量
         // total_standard_usdt_bonus: 用于累加所有非KOL的标准佣金总额
         // first_kol_in_chain: 用于存储在Upline中找到的第一个KOL的信息，确保奖励只给第一个
         let mut total_standard_usdt_bonus: f64 = 0.0;
