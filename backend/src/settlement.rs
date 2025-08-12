@@ -270,24 +270,32 @@ pub async fn trigger_daily_settlement_logic(
     }
 
     // --- 4. 【KOL特殊规则】处理KOL自身交易产生的NTX ---
-    // 在所有计算完成后，最终写入数据库之前，修正一次 final_earnings
+    println!("DEBUG: --- Starting final KOL NTX cleanup ---"); // 增加一个开始标记
     let mut ntx_redirected_from_kols_direct_trade: f64 = 0.0;
     for (user_id, earnings) in final_earnings.iter_mut() {
         // 检查该用户是不是KOL
-        if active_kols_map.contains_key(user_id) {
-            // 如果KOL有自己交易产生的NTX返点，则重定向给 user_id = 1
+        let is_kol = active_kols_map.contains_key(user_id);
+        
+        // 增加详细日志，无论是不是KOL都打印
+        if earnings.ntx_rebate > 0.0 {
+            println!(
+                "DEBUG: Checking user_id: {}. Is KOL? {}. NTX rebate before check: {:.4}",
+                user_id, is_kol, earnings.ntx_rebate
+            );
+        }
+
+        if is_kol { // 只有当确定是KOL时才进入
             if earnings.ntx_rebate > 0.0 {
-                 println!(
+                println!(
                     "Logic Info: KOL Direct Trade Rule! User {} is a KOL. Their direct NTX rebate of {} is being redirected to user_id=1.",
                     user_id, earnings.ntx_rebate
                 );
-                // 累加准备重定向的NTX
                 ntx_redirected_from_kols_direct_trade += earnings.ntx_rebate;
-                // 将KOL自己交易产生的NTX返佣清零（因为它已被重定向）
                 earnings.ntx_rebate = 0.0;
             }
         }
     }
+    println!("DEBUG: --- Finished final KOL NTX cleanup ---"); // 增加一个结束标记
 
     // 将所有从KOL自身交易重定向的NTX统一加到 user_id = 1 的账户上
     if ntx_redirected_from_kols_direct_trade > 0.0 {
