@@ -36,7 +36,6 @@ impl Database {
     }
 
     fn initialize_database(conn: &Connection) -> Result<()> {
-        // 用户表 - 新增 is_admin 和 created_at 字段
         conn.execute(
             r#"
             CREATE TABLE IF NOT EXISTS users (
@@ -221,6 +220,100 @@ impl Database {
         // 为 is_active 创建索引，便于快速查找所有活跃的KOL
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_kols_is_active ON kols (is_active)",
+            [],
+        )?;
+
+//class system + pay system
+
+        // 新增：权限组表
+        conn.execute(
+            r#"
+            CREATE TABLE IF NOT EXISTS permission_groups (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+            )
+            "#,
+            [],
+        )?;
+
+        // 新增：课程套餐表
+        conn.execute(
+            r#"
+            CREATE TABLE IF NOT EXISTS course_packages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                group_id INTEGER NOT NULL,
+                duration_days INTEGER NOT NULL,
+                price REAL NOT NULL,
+                currency TEXT NOT NULL DEFAULT 'USDT',
+                FOREIGN KEY (group_id) REFERENCES permission_groups(id) ON DELETE CASCADE
+            )
+            "#,
+            [],
+        )?;
+
+        // 新增：用户权限组关联表
+        conn.execute(
+            r#"
+            CREATE TABLE IF NOT EXISTS user_permission_groups (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                group_id INTEGER NOT NULL,
+                expires_at TEXT NOT NULL,
+                purchased_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (group_id) REFERENCES permission_groups(id) ON DELETE CASCADE,
+                UNIQUE(user_id, group_id)
+            )
+            "#,
+            [],
+        )?;
+
+        // 新增：课程表
+        conn.execute(
+            r#"
+            CREATE TABLE IF NOT EXISTS courses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                course_type TEXT NOT NULL,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+            )
+            "#,
+            [],
+        )?;
+
+        // 新增：课程与权限组关联表
+        conn.execute(
+            r#"
+            CREATE TABLE IF NOT EXISTS course_permission_groups (
+                course_id INTEGER NOT NULL,
+                group_id INTEGER NOT NULL,
+                FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE,
+                FOREIGN KEY (group_id) REFERENCES permission_groups(id) ON DELETE CASCADE,
+                PRIMARY KEY (course_id, group_id)
+            )
+            "#,
+            [],
+        )?;
+
+        // 新增：订单表
+        conn.execute(
+            r#"
+            CREATE TABLE IF NOT EXISTS orders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                package_id INTEGER NOT NULL,
+                amount REAL NOT NULL,
+                currency TEXT NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('pending', 'confirmed', 'closed')),
+                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+                updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                FOREIGN KEY (package_id) REFERENCES course_packages(id)
+            )
+            "#,
             [],
         )?;
 
@@ -1785,6 +1878,245 @@ impl Database {
     }
 
 
+    // =================================================================================
+    // 新增：课程与支付系统相关函数
+    // =================================================================================
+
+    // --- 权限组 (PermissionGroups) 操作 ---
+
+    /// 创建一个新的权限组
+    pub fn create_permission_group(&self, name: &str) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO permission_groups (name) VALUES (?)",
+            params![name],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// 获取所有权限组
+    pub fn get_all_permission_groups(&self) -> Result<Vec<PermissionGroup>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id, name, created_at FROM permission_groups")?;
+        let groups = stmt.query_map([], |row| {
+            Ok(PermissionGroup {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                created_at: row.get(2)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(groups)
+    }
+    
+    // --- 课程套餐 (CoursePackages) 操作 ---
+
+    /// 为指定的权限组创建新的课程套餐
+    pub fn create_course_package(&self, group_id: i64, duration_days: i64, price: f64, currency: &str) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO course_packages (group_id, duration_days, price, currency) VALUES (?, ?, ?, ?)",
+            params![group_id, duration_days, price, currency],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// 获取指定权限组下的所有套餐
+    pub fn get_packages_for_group(&self, group_id: i64) -> Result<Vec<CoursePackage>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id, group_id, duration_days, price, currency FROM course_packages WHERE group_id = ?")?;
+        let packages = stmt.query_map(params![group_id], |row| {
+            Ok(CoursePackage {
+                id: row.get(0)?,
+                group_id: row.get(1)?,
+                duration_days: row.get(2)?,
+                price: row.get(3)?,
+                currency: row.get(4)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(packages)
+    }
+
+    // --- 课程 (Courses) 操作 ---
+
+    /// 创建一个新课程
+    pub fn create_course(&self, course_type: &str, name: &str, description: &str, content: &str) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO courses (course_type, name, description, content) VALUES (?, ?, ?, ?)",
+            params![course_type, name, description, content],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// 将课程分配给一个权限组
+    pub fn assign_course_to_group(&self, course_id: i64, group_id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO course_permission_groups (course_id, group_id) VALUES (?, ?)",
+            params![course_id, group_id],
+        )?;
+        Ok(())
+    }
+
+    // --- 订单 (Orders) 操作 ---
+
+    /// 创建一个新订单
+    pub fn create_order(&self, user_id: i64, package_id: i64, amount: f64, currency: &str) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        let current_time = Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO orders (user_id, package_id, amount, currency, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'pending', ?, ?)",
+            params![user_id, package_id, amount, currency, current_time, current_time],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// 更新订单状态
+    pub fn update_order_status(&self, order_id: i64, status: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let current_time = Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE orders SET status = ?, updated_at = ? WHERE id = ?",
+            params![status, current_time, order_id],
+        )?;
+        Ok(())
+    }
+
+    /// 获取用户的订单列表
+    pub fn get_user_orders(&self, user_id: i64) -> Result<Vec<Order>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id, user_id, package_id, amount, currency, status, created_at, updated_at FROM orders WHERE user_id = ? ORDER BY created_at DESC")?;
+        let orders = stmt.query_map(params![user_id], |row| {
+            Ok(Order {
+                id: row.get(0)?,
+                user_id: row.get(1)?,
+                package_id: row.get(2)?,
+                amount: row.get(3)?,
+                currency: row.get(4)?,
+                status: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(orders)
+    }
+
+    // --- 用户权限 (User Permissions) 操作 ---
+    
+    /// 为用户授予权限组访问权限（或续期）
+    pub fn grant_permission_to_user(&self, user_id: i64, group_id: i64, duration_days: i64) -> Result<()> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+
+        // 检查用户是否已有该权限
+        let maybe_existing_expiry: Option<String> = tx.query_row(
+            "SELECT expires_at FROM user_permission_groups WHERE user_id = ? AND group_id = ?",
+            params![user_id, group_id],
+            |row| row.get(0),
+        ).optional()?;
+
+        let new_expires_at = match maybe_existing_expiry {
+            Some(expiry_str) => {
+                let current_expiry = chrono::DateTime::parse_from_rfc3339(&expiry_str).unwrap_or_else(|_| Utc::now().into());
+                // 如果权限已过期，则从现在开始计算；否则在原有效期基础上续期
+                let base_time = if current_expiry < Utc::now() { Utc::now() } else { current_expiry.into() };
+                (base_time + chrono::Duration::days(duration_days as i64)).to_rfc3339()
+            },
+            None => {
+                (Utc::now() + chrono::Duration::days(duration_days as i64)).to_rfc3339()
+            }
+        };
+
+        tx.execute(
+            "INSERT OR REPLACE INTO user_permission_groups (user_id, group_id, expires_at) VALUES (?, ?, ?)",
+            params![user_id, group_id, new_expires_at],
+        )?;
+
+        tx.commit()
+    }
+
+    /// 检查用户是否有权限访问特定课程
+    pub fn can_user_access_course(&self, user_id: i64, course_id: i64) -> Result<bool> {
+        let conn = self.conn.lock().unwrap();
+        let now_str = Utc::now().to_rfc3339();
+        
+        // 查询该课程需要哪些权限组
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT upg.id FROM user_permission_groups upg
+            JOIN course_permission_groups cpg ON upg.group_id = cpg.group_id
+            WHERE upg.user_id = ? AND cpg.course_id = ? AND upg.expires_at > ?
+            LIMIT 1
+            "#
+        )?;
+        
+        let result = stmt.query(params![user_id, course_id, now_str])?.next()?.is_some();
+        Ok(result)
+    }
+
+    // --- 新增的辅助函数 ---
+
+    /// 根据ID获取课程套餐信息
+    pub fn get_package_by_id(&self, package_id: i64) -> Result<Option<CoursePackage>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id, group_id, duration_days, price, currency FROM course_packages WHERE id = ?")?;
+        stmt.query_row(params![package_id], |row| {
+            Ok(CoursePackage {
+                id: row.get(0)?,
+                group_id: row.get(1)?,
+                duration_days: row.get(2)?,
+                price: row.get(3)?,
+                currency: row.get(4)?,
+            })
+        }).optional()
+    }
+
+    /// 根据ID获取订单信息
+    pub fn get_order_by_id(&self, order_id: i64) -> Result<Option<Order>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id, user_id, package_id, amount, currency, status, created_at, updated_at FROM orders WHERE id = ?")?;
+        stmt.query_row(params![order_id], |row| {
+            Ok(Order {
+                id: row.get(0)?,
+                user_id: row.get(1)?,
+                package_id: row.get(2)?,
+                amount: row.get(3)?,
+                currency: row.get(4)?,
+                status: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
+            })
+        }).optional()
+    }
+    
+    /// 获取用户有权访问的所有课程
+    pub fn get_accessible_courses_for_user(&self, user_id: i64) -> Result<Vec<Course>> {
+        let conn = self.conn.lock().unwrap();
+        let now_str = Utc::now().to_rfc3339();
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT DISTINCT c.id, c.course_type, c.name, c.description, c.content, c.created_at
+            FROM courses c
+            JOIN course_permission_groups cpg ON c.id = cpg.course_id
+            JOIN user_permission_groups upg ON cpg.group_id = upg.group_id
+            WHERE upg.user_id = ? AND upg.expires_at > ?
+            ORDER BY c.created_at DESC
+            "#
+        )?;
+
+        let courses = stmt.query_map(params![user_id, now_str], |row| {
+            Ok(Course {
+                id: row.get(0)?,
+                course_type: row.get(1)?,
+                name: row.get(2)?,
+                description: row.get(3)?,
+                content: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(courses)
+    }
+
 }
 
 
@@ -2114,6 +2446,58 @@ pub struct KolInfo {
     pub email: String,
     pub commission_rate: f64,
     pub is_active: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+// 权限组结构体
+#[derive(Debug, Serialize)]
+pub struct PermissionGroup {
+    pub id: i64,
+    pub name: String,
+    pub created_at: String,
+}
+
+// 课程套餐结构体
+#[derive(Debug, Serialize)]
+pub struct CoursePackage {
+    pub id: i64,
+    pub group_id: i64,
+    pub duration_days: i64,
+    pub price: f64,
+    pub currency: String,
+}
+
+// 用户权限组结构体
+#[derive(Debug, Serialize)]
+pub struct UserPermissionGroup {
+    pub id: i64,
+    pub user_id: i64,
+    pub group_id: i64,
+    pub expires_at: String,
+    pub purchased_at: String,
+}
+
+// 课程结构体
+#[derive(Debug, Serialize)]
+pub struct Course {
+    pub id: i64,
+    pub course_type: String,
+    pub name: String,
+    pub description: String,
+    pub content: String,
+    pub created_at: String,
+}
+
+// 订单结构体
+#[derive(Debug, Serialize)]
+pub struct Order {
+    pub id: i64,
+    pub user_id: i64,
+    pub package_id: i64,
+    pub amount: f64,
+    pub currency: String,
+    pub status: String,
     pub created_at: String,
     pub updated_at: String,
 }

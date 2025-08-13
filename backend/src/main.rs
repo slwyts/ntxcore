@@ -9,6 +9,8 @@ mod admin;
 mod middleware;
 mod tasks;
 mod gntx_sync;
+mod course;
+mod payment;
 
 use actix_web::{web, App, HttpServer};
 use dotenv::dotenv;
@@ -46,6 +48,8 @@ async fn main() -> std::io::Result<()> {
     let mail_user = env::var("MAIL_USER").expect("MAIL_USER 环境变量未设置");
     let mail_pass = env::var("MAIL_PASS").expect("MAIL_PASS 环境变量未设置");
     let key = env::var ("KEY").expect("system KEY is not set");
+    env::var("PAYMENT_RECEIVING_ADDRESS").expect("PAYMENT_RECEIVING_ADDRESS 环境变量未设置");
+
     // 创建数据库实例
     let db = match Database::new(&db_file) {
         Ok(db) => db,
@@ -64,7 +68,7 @@ async fn main() -> std::io::Result<()> {
     let jwt_config = web::Data::new(JwtConfig {
         secret: jwt_secret,
     });
-    // 新增 AdminKeyConfig
+
     let admin_key_config = web::Data::new(AdminKeyConfig {
         key: key,
     });
@@ -126,6 +130,13 @@ async fn main() -> std::io::Result<()> {
                     .service(user::get_articles) // 获取文章列表
                     .service(user::get_article_detail) // 获取文章详情
                     .service(user::update_user_nickname)
+                    .service(course::get_my_courses) // 新增：获取我的课程
+                    .service(payment::create_order) // 新增：创建订单
+                    .service(payment::get_my_orders) // 新增：获取我的订单
+            )
+            .service(
+                web::scope("/api/courses")
+                    .service(course::get_all_groups_and_packages)
             )
             .service(
                 web::scope("/api/admin")
@@ -134,7 +145,6 @@ async fn main() -> std::io::Result<()> {
                     .service(admin::get_all_users)
                     .service(admin::add_user_by_admin) // 管理员添加用户
                     .service(admin::get_user_full_info)
-                    //.service(admin::delete_user_by_admin)
                     .service(admin::get_user_bound_exchanges)
                     .service(admin::get_all_exchanges_admin) // 获取所有交易所
                     .service(admin::add_daily_trade_data)
@@ -171,6 +181,12 @@ async fn main() -> std::io::Result<()> {
                     .service(admin::get_all_kols_admin)
                     .service(admin::upsert_kol_admin)
                     .service(admin::delete_kol_admin)
+
+                    .service(course::create_permission_group) // 新增
+                    .service(course::create_course_package)    // 新增
+                    .service(course::create_course)            // 新增
+                    .service(course::assign_course_to_group) // 新增
+                    .service(payment::confirm_order_payment)   // 新增
             )
             .service(
                 web::scope("/api/system")
