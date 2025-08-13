@@ -534,6 +534,7 @@
                     <li><a href="#" data-section="trade-data"><i class="fas fa-chart-line"></i> <span>交易数据</span></a></li>
                     <li><a href="#" data-section="article-management"><i class="fas fa-newspaper"></i> <span>文章管理</span></a></li>
                     <li><a href="#" data-section="commission-referral"><i class="fas fa-handshake"></i> <span>佣金与推荐</span></a></li>
+                    <li><a href="#" data-section="course-payment-management"><i class="fas fa-chalkboard-teacher"></i> <span>课程与支付</span></a></li>
                     <li><a href="#" data-section="withdrawal-orders"><i class="fas fa-money-check-alt"></i> <span>提现订单</span></a></li>
                     <li><a href="#" data-section="dao-auction"><i class="fas fa-gavel"></i> <span>DAO 拍卖</span></a></li>
                     <li><a href="#" data-section="system-tools"><i class="fas fa-cogs"></i> <span>系统工具</span></a></li>
@@ -975,6 +976,87 @@
                     </div>
             </section>
 
+            <section id="course-payment-management" class="content-area">
+                <div class="section">
+                    <h2>订单管理</h2>
+                    <div class="filter-controls">
+                        <select id="course-order-status-filter">
+                            <option value="">所有状态</option>
+                            <option value="pending">待处理 (pending)</option>
+                            <option value="confirmed">已确认 (confirmed)</option>
+                            <option value="closed">已关闭 (closed)</option>
+                        </select>
+                        <button class="btn btn-primary" id="filter-course-orders-btn">筛选订单</button>
+                    </div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>订单ID</th>
+                                <th>用户ID</th>
+                                <th>套餐ID</th>
+                                <th>原始金额</th>
+                                <th>支付金额</th>
+                                <th>状态</th>
+                                <th>创建时间</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="course-orders-list-body"></tbody>
+                    </table>
+                </div>
+
+                <div class="section">
+                    <h2>权限组管理</h2>
+                    <button class="btn btn-success" id="create-permission-group-btn">创建新权限组</button>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>名称</th>
+                                <th>创建时间</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="permission-group-list-body"></tbody>
+                    </table>
+                </div>
+
+                <div class="section">
+                    <h2>课程套餐管理</h2>
+                    <button class="btn btn-success" id="create-course-package-btn">创建新套餐</button>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>所属权限组ID</th>
+                                <th>有效天数</th>
+                                <th>价格</th>
+                                <th>货币</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="course-package-list-body"></tbody>
+                    </table>
+                </div>
+
+                <div class="section">
+                    <h2>课程管理</h2>
+                    <button class="btn btn-success" id="create-course-btn">创建新课程</button>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>类型</th>
+                                <th>名称</th>
+                                <th>描述</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="course-list-body"></tbody>
+                    </table>
+                </div>
+            </section>
+
             <div id="user-modal" class="modal">
                 <div class="modal-content">
                     <span class="close-button" data-modal="user-modal">&times;</span>
@@ -1176,6 +1258,85 @@
                 </div>
             </div>
 
+            <div id="permission-group-modal" class="modal">
+                <div class="modal-content">
+                    <span class="close-button" data-modal="permission-group-modal">&times;</span>
+                    <h2 id="permission-group-modal-title">创建权限组</h2>
+                    <form id="permission-group-form">
+                        <input type="hidden" id="permission-group-id">
+                        <div class="form-group">
+                            <label for="permission-group-name">权限组名称:</label>
+                            <input type="text" id="permission-group-name" required>
+                        </div>
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary">保存</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div id="course-package-modal" class="modal">
+                <div class="modal-content">
+                    <span class="close-button" data-modal="course-package-modal">&times;</span>
+                    <h2 id="course-package-modal-title">创建课程套餐</h2>
+                    <form id="course-package-form">
+                        <input type="hidden" id="course-package-id">
+                        <div class="form-group">
+                            <label for="package-group-id">所属权限组:</label>
+                            <select id="package-group-id" required></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="package-duration-days">有效天数:</label>
+                            <input type="number" id="package-duration-days" required min="1">
+                        </div>
+                        <div class="form-group">
+                            <label for="package-price">价格:</label>
+                            <input type="number" id="package-price" step="0.01" required min="0">
+                        </div>
+                        <div class="form-group">
+                            <label for="package-currency">货币:</label>
+                            <input type="text" id="package-currency" value="USDT" required>
+                        </div>
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary">保存</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div id="course-modal" class="modal">
+                <div class="modal-content">
+                    <span class="close-button" data-modal="course-modal">&times;</span>
+                    <h2 id="course-modal-title">创建课程</h2>
+                    <form id="course-form">
+                        <input type="hidden" id="course-id">
+                        <div class="form-group">
+                            <label for="course-type">课程类型:</label>
+                            <input type="text" id="course-type" value="article" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="course-name">课程名称:</label>
+                            <input type="text" id="course-name" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="course-description">课程描述:</label>
+                            <textarea id="course-description" rows="3" required></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="course-content">课程内容 (Markdown):</label>
+                            <textarea id="course-content" rows="8" required></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>分配到权限组:</label>
+                            <div id="course-permission-groups-checkboxes"></div>
+                        </div>
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary">保存</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
         </main>
     </div>
 
@@ -1200,6 +1361,11 @@
         let allDaoAuctions = [];
         let allKols = []; // 新增：用于存储KOL列表
 
+        // 放置在 let allKols = []; 之后
+        let allPermissionGroups = [];
+        let allCoursePackages = [];
+        let allCourses = [];
+        let allCourseOrders = [];
         // ====================================================================
         // Helper Functions
         // ====================================================================
@@ -2366,6 +2532,281 @@
             });
         }
 
+
+        // ====================================================================
+        // Course & Payment Management Functionality (NEW)
+        // ====================================================================
+
+        // --- 订单管理 ---
+        function renderCourseOrders(orders) {
+            const tbody = document.getElementById('course-orders-list-body');
+            tbody.innerHTML = '';
+            if (!orders || orders.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">无订单数据</td></tr>';
+                return;
+            }
+            orders.forEach(order => {
+                const row = tbody.insertRow();
+                let actionsHtml = '';
+                if (order.status === 'pending') {
+                    actionsHtml = `<button class="btn btn-success btn-sm" onclick="confirmCourseOrder(${order.id})">确认支付</button>`;
+                }
+                row.innerHTML = `
+                    <td>${order.id}</td>
+                    <td>${order.user_id}</td>
+                    <td>${order.package_id}</td>
+                    <td>${order.amount.toFixed(2)}</td>
+                    <td>${order.paymentAmount.toFixed(5)}</td>
+                    <td>${order.status}</td>
+                    <td>${formatDateTime(order.created_at)}</td>
+                    <td>${actionsHtml || '无操作'}</td>
+                `;
+            });
+        }
+
+        async function loadCourseOrders() {
+            const status = document.getElementById('course-order-status-filter').value;
+            const endpoint = status ? `/orders/all?status=${status}` : '/orders/all';
+            const orders = await fetchData(endpoint);
+            if (orders) {
+                allCourseOrders = orders;
+                renderCourseOrders(allCourseOrders);
+            }
+        }
+
+        async function confirmCourseOrder(orderId) {
+            Swal.fire({
+                title: '确认订单支付?',
+                text: `您确定要手动确认订单 #${orderId} 已成功支付吗？`,
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonText: '是的，确认!',
+                cancelButtonText: '取消'
+            }).then(async (result) => {
+                if (result.isConfirmed) {
+                    const response = await fetchData(`/orders/${orderId}/confirm`, 'POST');
+                    if (response) {
+                        Swal.fire('成功!', '订单已确认，用户权限已授予。', 'success');
+                        loadCourseOrders();
+                    }
+                }
+            });
+        }
+
+        // --- 权限组管理 ---
+        function renderPermissionGroups(groups) {
+            const tbody = document.getElementById('permission-group-list-body');
+            tbody.innerHTML = '';
+            groups.forEach(group => {
+                const row = tbody.insertRow();
+                row.innerHTML = `
+                    <td>${group.id}</td>
+                    <td>${escapeHtml(group.name)}</td>
+                    <td>${formatDateTime(group.created_at)}</td>
+                    <td>
+                        <button class="btn btn-primary btn-sm" onclick="openPermissionGroupModal(${group.id}, '${escapeHtml(group.name)}')">编辑</button>
+                        <button class="btn btn-danger btn-sm" onclick="deletePermissionGroup(${group.id})">删除</button>
+                    </td>
+                `;
+            });
+        }
+
+        async function loadPermissionGroups() {
+            const groups = await fetchData('/permission_groups/all');
+            if (groups) {
+                allPermissionGroups = groups;
+                renderPermissionGroups(allPermissionGroups);
+            }
+        }
+
+        function openPermissionGroupModal(id = null, name = '') {
+            document.getElementById('permission-group-id').value = id || '';
+            document.getElementById('permission-group-name').value = name;
+            document.getElementById('permission-group-modal-title').textContent = id ? '编辑权限组' : '创建新权限组';
+            document.getElementById('permission-group-modal').style.display = 'flex';
+        }
+
+        async function deletePermissionGroup(groupId) {
+            Swal.fire({
+                title: '确认删除?',
+                text: `删除权限组会导致关联的套餐和课程权限失效！`,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: '确认删除'
+            }).then(async (result) => {
+                if (result.isConfirmed) {
+                    const response = await fetchData(`/permission_groups/${groupId}`, 'DELETE');
+                    if (response) {
+                        Swal.fire('已删除', '权限组已成功删除。', 'success');
+                        loadPermissionGroups();
+                    }
+                }
+            });
+        }
+
+        // --- 课程套餐管理 ---
+        function renderCoursePackages(packages) {
+            const tbody = document.getElementById('course-package-list-body');
+            tbody.innerHTML = '';
+            packages.forEach(pkg => {
+                const groupName = allPermissionGroups.find(g => g.id === pkg.group_id)?.name || '未知';
+                const row = tbody.insertRow();
+                row.innerHTML = `
+                    <td>${pkg.id}</td>
+                    <td>${pkg.group_id} (${escapeHtml(groupName)})</td>
+                    <td>${pkg.duration_days}</td>
+                    <td>${pkg.price.toFixed(2)}</td>
+                    <td>${pkg.currency}</td>
+                    <td>
+                        <button class="btn btn-primary btn-sm" onclick="openCoursePackageModal(${pkg.id})">编辑</button>
+                        <button class="btn btn-danger btn-sm" onclick="deleteCoursePackage(${pkg.id})">删除</button>
+                    </td>
+                `;
+            });
+        }
+
+        async function loadCoursePackages() {
+            const packages = await fetchData('/course_packages/all');
+            if (packages) {
+                allCoursePackages = packages;
+                renderCoursePackages(allCoursePackages);
+            }
+        }
+
+        async function openCoursePackageModal(packageId = null) {
+            const form = document.getElementById('course-package-form');
+            form.reset();
+            document.getElementById('course-package-id').value = packageId || '';
+            
+            // 填充权限组下拉菜单
+            const groupSelect = document.getElementById('package-group-id');
+            groupSelect.innerHTML = '';
+            allPermissionGroups.forEach(group => {
+                const option = document.createElement('option');
+                option.value = group.id;
+                option.textContent = `${group.id} - ${group.name}`;
+                groupSelect.appendChild(option);
+            });
+
+            if (packageId) {
+                const pkg = allCoursePackages.find(p => p.id === packageId);
+                if (pkg) {
+                    document.getElementById('package-group-id').value = pkg.group_id;
+                    document.getElementById('package-duration-days').value = pkg.duration_days;
+                    document.getElementById('package-price').value = pkg.price;
+                    document.getElementById('package-currency').value = pkg.currency;
+                }
+            }
+            document.getElementById('course-package-modal-title').textContent = packageId ? '编辑课程套餐' : '创建新套餐';
+            document.getElementById('course-package-modal').style.display = 'flex';
+        }
+
+        async function deleteCoursePackage(packageId) {
+            Swal.fire({
+                title: '确认删除?', text: "确认删除此套餐？", icon: 'warning', showCancelButton: true
+            }).then(async (result) => {
+                if (result.isConfirmed) {
+                    const response = await fetchData(`/course_packages/${packageId}`, 'DELETE');
+                    if (response) {
+                        Swal.fire('已删除', '套餐已成功删除。', 'success');
+                        loadCoursePackages();
+                    }
+                }
+            });
+        }
+
+        // --- 课程管理 ---
+        function renderCourses(courses) {
+            const tbody = document.getElementById('course-list-body');
+            tbody.innerHTML = '';
+            courses.forEach(course => {
+                const row = tbody.insertRow();
+                row.innerHTML = `
+                    <td>${course.id}</td>
+                    <td>${escapeHtml(course.course_type)}</td>
+                    <td>${escapeHtml(course.name)}</td>
+                    <td>${escapeHtml(course.description)}</td>
+                    <td>
+                        <button class="btn btn-primary btn-sm" onclick="openCourseModal(${course.id})">编辑</button>
+                        <button class="btn btn-danger btn-sm" onclick="deleteCourse(${course.id})">删除</button>
+                    </td>
+                `;
+            });
+        }
+
+        async function loadCourses() {
+            const courses = await fetchData('/courses/all');
+            if (courses) {
+                allCourses = courses;
+                renderCourses(allCourses);
+            }
+        }
+
+        // 用下面的新版本替换掉整个 openCourseModal 函数
+
+        async function openCourseModal(courseId = null) {
+            const form = document.getElementById('course-form');
+            form.reset();
+            document.getElementById('course-id').value = courseId || '';
+            
+            // 动态生成权限组复选框
+            const checkboxesContainer = document.getElementById('course-permission-groups-checkboxes');
+            checkboxesContainer.innerHTML = '';
+            allPermissionGroups.forEach(group => {
+                const checkboxHtml = `
+                    <label style="margin-right: 15px;">
+                        <input type="checkbox" name="course-permission-group" value="${group.id}">
+                        ${escapeHtml(group.name)}
+                    </label>`;
+                checkboxesContainer.innerHTML += checkboxHtml;
+            });
+
+            if (courseId) {
+                // --- ▼▼▼ 编辑模式下的修改从这里开始 ▼▼▼ ---
+                document.getElementById('course-modal-title').textContent = '编辑课程';
+                const course = allCourses.find(c => c.id === courseId);
+                
+                if(course) {
+                    document.getElementById('course-type').value = course.course_type;
+                    document.getElementById('course-name').value = course.name;
+                    document.getElementById('course-description').value = course.description;
+                    document.getElementById('course-content').value = course.content;
+                    
+                    // 1. 调用新API获取该课程已关联的权限组ID
+                    const associatedGroupIds = await fetchData(`/courses/${courseId}/groups`);
+                    
+                    if (associatedGroupIds) {
+                        // 2. 遍历所有复选框，如果其ID在返回的列表中，则勾选它
+                        const groupCheckboxes = document.querySelectorAll('input[name="course-permission-group"]');
+                        groupCheckboxes.forEach(checkbox => {
+                            if (associatedGroupIds.includes(parseInt(checkbox.value))) {
+                                checkbox.checked = true;
+                            }
+                        });
+                    }
+                }
+                // --- ▲▲▲ 编辑模式下的修改在这里结束 ▲▲▲ ---
+            } else {
+                document.getElementById('course-modal-title').textContent = '创建新课程';
+            }
+            
+            document.getElementById('course-modal').style.display = 'flex';
+        }
+
+        async function deleteCourse(courseId) {
+            Swal.fire({
+                title: '确认删除?', text: "确认删除此课程？", icon: 'warning', showCancelButton: true
+            }).then(async (result) => {
+                if (result.isConfirmed) {
+                    const response = await fetchData(`/courses/${courseId}`, 'DELETE');
+                    if (response) {
+                        Swal.fire('已删除', '课程已成功删除。', 'success');
+                        loadCourses();
+                    }
+                }
+            });
+        }
+
         // ====================================================================
         // System Tools Functionality
         // ====================================================================
@@ -2444,6 +2885,7 @@
                 'article-management': '文章管理',
                 'commission-referral': '佣金与推荐',
                 'withdrawal-orders': '提现订单',
+                'course-payment-management': '课程与支付管理',
                 'dao-auction': 'DAO 拍卖',
                 'kol-management': 'KOL管理', // 新增标题映射
                 'system-tools': '系统工具'
@@ -2517,8 +2959,14 @@
                         case 'dao-auction':
                             loadDaoAuctions();
                             break;
-                        case 'kol-management': // 新增case
+                        case 'kol-management':
                             loadKols();
+                            break;
+                        case 'course-payment-management':
+                            loadPermissionGroups();
+                            loadCoursePackages();
+                            loadCourses();
+                            loadCourseOrders();
                             break;
                         case 'user-exchange-bindings':
                             setupUserExchangeBindingsSection();
@@ -2574,11 +3022,81 @@
         document.getElementById('create-kol-btn').addEventListener('click', () => {
             openKolModal();
         });
-            // 新增：KOL创建按钮
-            document.getElementById('create-kol-btn').addEventListener('click', () => {
-                openKolModal();
-            });
-        });
+        
+        // 放置在 document.getElementById('create-kol-btn').addEventListener('click', ...); 之后
+
+// --- 课程与支付管理事件监听 ---
+document.getElementById('filter-course-orders-btn').addEventListener('click', loadCourseOrders);
+document.getElementById('create-permission-group-btn').addEventListener('click', () => openPermissionGroupModal());
+document.getElementById('create-course-package-btn').addEventListener('click', () => openCoursePackageModal());
+document.getElementById('create-course-btn').addEventListener('click', () => openCourseModal());
+
+document.getElementById('permission-group-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const id = document.getElementById('permission-group-id').value;
+    const payload = { name: document.getElementById('permission-group-name').value };
+    const endpoint = id ? `/permission_groups/${id}` : '/permission_groups';
+    const method = id ? 'PUT' : 'POST';
+    
+    const result = await fetchData(endpoint, method, payload);
+    if (result) {
+        Swal.fire('成功', '权限组已保存', 'success');
+        document.getElementById('permission-group-modal').style.display = 'none';
+        loadPermissionGroups();
+    }
+});
+
+document.getElementById('course-package-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const id = document.getElementById('course-package-id').value;
+    const payload = {
+        group_id: parseInt(document.getElementById('package-group-id').value),
+        duration_days: parseInt(document.getElementById('package-duration-days').value),
+        price: parseFloat(document.getElementById('package-price').value),
+        currency: document.getElementById('package-currency').value
+    };
+    const endpoint = id ? `/course_packages/${id}` : '/course_packages';
+    const method = id ? 'PUT' : 'POST';
+
+    const result = await fetchData(endpoint, method, payload);
+    if (result) {
+        Swal.fire('成功', '课程套餐已保存', 'success');
+        document.getElementById('course-package-modal').style.display = 'none';
+        loadCoursePackages();
+    }
+});
+
+document.getElementById('course-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const id = document.getElementById('course-id').value;
+    const payload = {
+        course_type: document.getElementById('course-type').value,
+        name: document.getElementById('course-name').value,
+        description: document.getElementById('course-description').value,
+        content: document.getElementById('course-content').value
+    };
+    const endpoint = id ? `/courses/${id}` : '/courses';
+    const method = id ? 'PUT' : 'POST';
+    
+    const result = await fetchData(endpoint, method, payload);
+    if (result && result.id) { // 创建成功后，处理权限组关联
+        const courseId = id || result.id;
+        const groupCheckboxes = document.querySelectorAll('input[name="course-permission-group"]:checked');
+        for (const checkbox of groupCheckboxes) {
+            await fetchData(`/courses/${courseId}/assign_group`, 'POST', { group_id: parseInt(checkbox.value) });
+        }
+        Swal.fire('成功', '课程已保存', 'success');
+        document.getElementById('course-modal').style.display = 'none';
+        loadCourses();
+    } else if (result) { // 更新成功
+        Swal.fire('成功', '课程已更新', 'success');
+        document.getElementById('course-modal').style.display = 'none';
+        loadCourses();
+    }
+});
+
+
+     });
     </script>
 </body>
 </html>

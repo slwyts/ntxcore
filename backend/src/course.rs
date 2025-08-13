@@ -284,6 +284,14 @@ pub async fn delete_course(db: web::Data<Database>, path: web::Path<i64>) -> imp
         Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({"error": e.to_string()})),
     }
 }
+#[get("/courses/{id}/groups", wrap="AdminAuth")]
+pub async fn get_course_groups(db: web::Data<Database>, path: web::Path<i64>) -> impl Responder {
+    let course_id = path.into_inner();
+    match db.get_group_ids_for_course(course_id) {
+        Ok(group_ids) => HttpResponse::Ok().json(group_ids),
+        Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({"error": e.to_string()})),
+    }
+}
 
 // --- 课程套餐管理 ---
 #[get("/course_packages/all", wrap="AdminAuth")]

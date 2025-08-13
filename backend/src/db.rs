@@ -2110,6 +2110,16 @@ impl Database {
 
     // --- 新增的辅助函数 ---
 
+    // 放置在 impl Database 块内的任意位置
+
+    /// (新增) 获取单个课程已关联的所有权限组ID
+    pub fn get_group_ids_for_course(&self, course_id: i64) -> Result<Vec<i64>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT group_id FROM course_permission_groups WHERE course_id = ?")?;
+        let ids_iter = stmt.query_map(params![course_id], |row| row.get(0))?;
+        ids_iter.collect()
+    }
+
     /// 根据ID获取课程套餐信息
     pub fn get_order_by_id(&self, order_id: i64) -> Result<Option<Order>> {
         let conn = self.conn.lock().unwrap();

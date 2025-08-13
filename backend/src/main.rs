@@ -202,6 +202,7 @@ async fn main() -> std::io::Result<()> {
                     .service(course::create_course)             // 创建课程 (已有)
                     .service(course::update_course)             // 更新课程
                     .service(course::delete_course)             // 删除课程
+                    .service(course::get_course_groups)         // 获取课程关联的所有权限组
                     .service(course::assign_course_to_group)    // 分配课程到组 (已有)
 
                     .service(course::get_all_course_packages_admin) // 查看所有套餐
