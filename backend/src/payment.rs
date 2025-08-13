@@ -1,17 +1,23 @@
 // src/payment.rs
 use actix_web::{get, post, web, HttpResponse, Responder, HttpRequest};
-use serde::Deserialize;
+use serde::{Deserialize};
 use std::env;
 use crate::db::Database;
 use crate::middleware::AdminAuth;
 use crate::user::get_user_id_from_token;
 use crate::JwtConfig;
+use rand::Rng;
 
 // --- 请求体定义 ---
 
 #[derive(Deserialize)]
 pub struct CreateOrderRequest {
     pub package_id: i64,
+}
+
+#[derive(Deserialize)]
+pub struct OrderQuery {
+    pub status: Option<String>,
 }
 
 // --- 路由处理函数 ---
@@ -36,24 +42,32 @@ pub async fn create_order(
         Err(e) => return HttpResponse::InternalServerError().json(serde_json::json!({"error": e.to_string()})),
     };
     
-    // 2. 创建订单
-    match db.create_order(user_id, order_req.package_id, package.price, &package.currency) {
+    // 2. 生成唯一的支付金额
+    // 生成一个 0.00001 到 0.00999 之间的随机数
+    let random_micro_amount: f64 = rand::thread_rng().gen_range(1..1000) as f64 / 100_000.0;
+    // 加上原始价格，并格式化为小数点后5位，避免浮点数精度问题
+    let payment_amount = (package.price + random_micro_amount * 100_000.0).round() / 100_000.0;
+
+    // 3. 创建订单，并存入新的支付金额
+    match db.create_order(user_id, order_req.package_id, package.price, payment_amount, &package.currency) {
         Ok(order_id) => {
             // 从环境变量获取收款地址
             let receiving_address = env::var("PAYMENT_RECEIVING_ADDRESS")
-                .unwrap_or_else(|_| "YOUR_DEFAULT_ADDRESS_HERE".to_string());
+                .unwrap_or_else(|_| "YOUR_DEFAULT_WALLET_ADDRESS_NOT_SET".to_string());
 
             HttpResponse::Ok().json(serde_json::json!({
                 "message": "订单创建成功，请支付",
                 "orderId": order_id,
-                "amount": package.price,
+                "amount": package.price, // 原始套餐价格
+                "paymentAmount": payment_amount, // 要求用户实际支付的唯一金额
                 "currency": package.currency,
-                "paymentAddress": receiving_address
+                "paymentAddress": receiving_address // 收款地址
             }))
         },
         Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({"error": e.to_string()})),
     }
 }
+
 
 // 用户获取自己的订单列表
 #[get("/orders")]
@@ -112,4 +126,15 @@ pub async fn confirm_order_payment(
     HttpResponse::Ok().json(serde_json::json!({
         "message": "订单已手动确认，并成功为用户授予权限"
     }))
+}
+
+#[get("/orders/all", wrap="AdminAuth")]
+pub async fn get_all_orders_admin(
+    db: web::Data<Database>,
+    query: web::Query<OrderQuery>
+) -> impl Responder {
+    match db.get_all_orders(query.status.as_deref()) {
+        Ok(orders) => HttpResponse::Ok().json(orders),
+        Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({"error": e.to_string()})),
+    }
 }

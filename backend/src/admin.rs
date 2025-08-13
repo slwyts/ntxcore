@@ -3,6 +3,7 @@ use actix_web::{get, post, delete, web, HttpResponse, Responder,put};
 use serde::{Deserialize, Serialize};
 use crate::db::Database;
 use crate::utils::{is_valid_date, get_current_utc_time_string, is_valid_evm_address, is_valid_email, is_valid_password, hash_password, generate_invite_code}; // 引入更多 utils 函数
+use crate::course::{GrantPermissionRequest, RevokePermissionRequest};
 
 // gntx
 // GNTX 数据库操作底层函数，供 gntx_sync 调用
@@ -1384,5 +1385,33 @@ pub async fn delete_kol_admin(db: web::Data<Database>, path: web::Path<i64>) -> 
             eprintln!("API Error: /api/admin/kols/{} - 删除KOL失败: {:?}", user_id, e);
             HttpResponse::InternalServerError().json(serde_json::json!({"error": "删除KOL失败"}))
         }
+    }
+}
+// --- 用户权限手动管理 ---
+#[get("/users/{user_id}/permissions")]
+pub async fn get_user_permissions_admin(db: web::Data<Database>, path: web::Path<i64>) -> impl Responder {
+    let user_id = path.into_inner();
+    match db.get_user_permissions(user_id) {
+        Ok(permissions) => HttpResponse::Ok().json(permissions),
+        Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({"error": e.to_string()})),
+    }
+}
+
+#[post("/users/{user_id}/grant_permission")]
+pub async fn grant_permission_admin(db: web::Data<Database>, path: web::Path<i64>, req: web::Json<GrantPermissionRequest>) -> impl Responder {
+    let user_id = path.into_inner();
+    // grant_permission_to_user 函数可以复用
+    match db.grant_permission_to_user(user_id, req.group_id, req.duration_days) {
+        Ok(_) => HttpResponse::Ok().json(serde_json::json!({"message": "权限授予成功"})),
+        Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({"error": e.to_string()})),
+    }
+}
+
+#[post("/users/{user_id}/revoke_permission")]
+pub async fn revoke_permission_admin(db: web::Data<Database>, path: web::Path<i64>, req: web::Json<RevokePermissionRequest>) -> impl Responder {
+    let user_id = path.into_inner();
+    match db.revoke_permission_from_user(user_id, req.group_id) {
+        Ok(_) => HttpResponse::Ok().json(serde_json::json!({"message": "权限移除成功"})),
+        Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({"error": e.to_string()})),
     }
 }

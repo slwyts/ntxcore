@@ -130,13 +130,14 @@ async fn main() -> std::io::Result<()> {
                     .service(user::get_articles) // 获取文章列表
                     .service(user::get_article_detail) // 获取文章详情
                     .service(user::update_user_nickname)
-                    .service(course::get_my_courses) // 新增：获取我的课程
-                    .service(payment::create_order) // 新增：创建订单
-                    .service(payment::get_my_orders) // 新增：获取我的订单
+                    .service(course::get_my_courses) // 获取我的课程
+                    .service(payment::create_order) // 创建订单
+                    .service(payment::get_my_orders) // 获取我的订单
             )
             .service(
                 web::scope("/api/courses")
                     .service(course::get_all_groups_and_packages)
+                    .service(course::get_all_courses_for_user) 
             )
             .service(
                 web::scope("/api/admin")
@@ -187,6 +188,30 @@ async fn main() -> std::io::Result<()> {
                     .service(course::create_course)            // 新增
                     .service(course::assign_course_to_group) // 新增
                     .service(payment::confirm_order_payment)   // 新增
+
+                    // === 新增课程和支付管理API ===
+                    .service(payment::get_all_orders_admin)     // 查看所有订单
+                    .service(payment::confirm_order_payment)    // 确认订单 (已有)
+                    
+                    .service(course::get_all_permission_groups_admin) // 查看所有权限组
+                    .service(course::create_permission_group)   // 创建权限组 (已有)
+                    .service(course::update_permission_group)   // 更新权限组
+                    .service(course::delete_permission_group)   // 删除权限组
+
+                    .service(course::get_all_courses_admin)     // 查看所有课程
+                    .service(course::create_course)             // 创建课程 (已有)
+                    .service(course::update_course)             // 更新课程
+                    .service(course::delete_course)             // 删除课程
+                    .service(course::assign_course_to_group)    // 分配课程到组 (已有)
+
+                    .service(course::get_all_course_packages_admin) // 查看所有套餐
+                    .service(course::create_course_package)     // 创建套餐 (已有)
+                    .service(course::update_course_package)     // 更新套餐
+                    .service(course::delete_course_package)     // 删除套餐
+
+                    .service(admin::get_user_permissions_admin) // 查看用户权限
+                    .service(admin::grant_permission_admin)     // 手动授予权限
+                    .service(admin::revoke_permission_admin)    // 手动移除权限
             )
             .service(
                 web::scope("/api/system")

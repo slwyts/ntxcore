@@ -1,8 +1,8 @@
 // src/db.rs
-use rusqlite::{Connection, Result, params, /*params_from_iter ,*/ OptionalExtension, Transaction, Error as RusqliteError};
+use rusqlite::{Connection, Result, params, OptionalExtension, Transaction, Error as RusqliteError};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use chrono::{Utc};
 use rusqlite::ffi;
 use serde::Serialize;
@@ -237,6 +237,11 @@ impl Database {
             [],
         )?;
 
+        conn.execute(
+            "INSERT OR IGNORE INTO permission_groups (id, name) VALUES (1, '普通用户')",
+            [],
+        )?;
+
         // 新增：课程套餐表
         conn.execute(
             r#"
@@ -306,6 +311,7 @@ impl Database {
                 user_id INTEGER NOT NULL,
                 package_id INTEGER NOT NULL,
                 amount REAL NOT NULL,
+                payment_amount REAL NOT NULL, -- 新增字段
                 currency TEXT NOT NULL,
                 status TEXT NOT NULL CHECK(status IN ('pending', 'confirmed', 'closed')),
                 created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
@@ -1958,20 +1964,67 @@ impl Database {
         Ok(())
     }
 
+
+    /// (新增) 获取所有课程及其关联的权限组信息
+    pub fn get_all_courses_with_their_groups(&self) -> Result<Vec<CourseWithGroup>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT 
+                c.id, c.course_type, c.name, c.description, c.content,
+                pg.id, pg.name
+            FROM courses c
+            JOIN course_permission_groups cpg ON c.id = cpg.course_id
+            JOIN permission_groups pg ON cpg.group_id = pg.id
+            ORDER BY c.id
+            "#
+        )?;
+
+        let course_iter = stmt.query_map([], |row| {
+            Ok(CourseWithGroup {
+                course_id: row.get(0)?,
+                course_type: row.get(1)?,
+                course_name: row.get(2)?,
+                course_description: row.get(3)?,
+                course_content: row.get(4)?,
+                group_id: row.get(5)?,
+                group_name: row.get(6)?,
+            })
+        })?;
+
+        course_iter.collect()
+    }
+
+    /// (新增) 获取用户所有有效的权限组ID集合 (包括默认组)
+    pub fn get_user_active_permission_ids(&self, user_id: i64) -> Result<HashSet<i64>> {
+        let conn = self.conn.lock().unwrap();
+        let now_str = Utc::now().to_rfc3339();
+        
+        let mut stmt = conn.prepare(
+            "SELECT group_id FROM user_permission_groups WHERE user_id = ? AND expires_at > ?"
+        )?;
+
+        let mut ids: HashSet<i64> = stmt.query_map(params![user_id, now_str], |row| row.get(0))?
+            .collect::<Result<HashSet<i64>, _>>()?;
+
+        // 总是将默认组ID(1)添加进去
+        ids.insert(1);
+
+        Ok(ids)
+    }
     // --- 订单 (Orders) 操作 ---
 
     /// 创建一个新订单
-    pub fn create_order(&self, user_id: i64, package_id: i64, amount: f64, currency: &str) -> Result<i64> {
+    pub fn create_order(&self, user_id: i64, package_id: i64, amount: f64, payment_amount: f64, currency: &str) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
         let current_time = Utc::now().to_rfc3339();
         conn.execute(
-            "INSERT INTO orders (user_id, package_id, amount, currency, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'pending', ?, ?)",
-            params![user_id, package_id, amount, currency, current_time, current_time],
+            "INSERT INTO orders (user_id, package_id, amount, payment_amount, currency, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)",
+            params![user_id, package_id, amount, payment_amount, currency, current_time, current_time],
         )?;
         Ok(conn.last_insert_rowid())
     }
 
-    /// 更新订单状态
     pub fn update_order_status(&self, order_id: i64, status: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         let current_time = Utc::now().to_rfc3339();
@@ -1982,20 +2035,21 @@ impl Database {
         Ok(())
     }
 
-    /// 获取用户的订单列表
+    // 获取用户的订单列表 (查询并映射 payment_amount)
     pub fn get_user_orders(&self, user_id: i64) -> Result<Vec<Order>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare("SELECT id, user_id, package_id, amount, currency, status, created_at, updated_at FROM orders WHERE user_id = ? ORDER BY created_at DESC")?;
+        let mut stmt = conn.prepare("SELECT id, user_id, package_id, amount, payment_amount, currency, status, created_at, updated_at FROM orders WHERE user_id = ? ORDER BY created_at DESC")?;
         let orders = stmt.query_map(params![user_id], |row| {
             Ok(Order {
                 id: row.get(0)?,
                 user_id: row.get(1)?,
                 package_id: row.get(2)?,
                 amount: row.get(3)?,
-                currency: row.get(4)?,
-                status: row.get(5)?,
-                created_at: row.get(6)?,
-                updated_at: row.get(7)?,
+                payment_amount: row.get(4)?,
+                currency: row.get(5)?,
+                status: row.get(6)?,
+                created_at: row.get(7)?,
+                updated_at: row.get(8)?,
             })
         })?.collect::<Result<Vec<_>, _>>()?;
         Ok(orders)
@@ -2036,27 +2090,46 @@ impl Database {
     }
 
     /// 检查用户是否有权限访问特定课程
-    pub fn can_user_access_course(&self, user_id: i64, course_id: i64) -> Result<bool> {
-        let conn = self.conn.lock().unwrap();
-        let now_str = Utc::now().to_rfc3339();
+    // pub fn can_user_access_course(&self, user_id: i64, course_id: i64) -> Result<bool> {
+    //     let conn = self.conn.lock().unwrap();
+    //     let now_str = Utc::now().to_rfc3339();
         
-        // 查询该课程需要哪些权限组
-        let mut stmt = conn.prepare(
-            r#"
-            SELECT upg.id FROM user_permission_groups upg
-            JOIN course_permission_groups cpg ON upg.group_id = cpg.group_id
-            WHERE upg.user_id = ? AND cpg.course_id = ? AND upg.expires_at > ?
-            LIMIT 1
-            "#
-        )?;
+    //     // 查询该课程需要哪些权限组
+    //     let mut stmt = conn.prepare(
+    //         r#"
+    //         SELECT upg.id FROM user_permission_groups upg
+    //         JOIN course_permission_groups cpg ON upg.group_id = cpg.group_id
+    //         WHERE upg.user_id = ? AND cpg.course_id = ? AND upg.expires_at > ?
+    //         LIMIT 1
+    //         "#
+    //     )?;
         
-        let result = stmt.query(params![user_id, course_id, now_str])?.next()?.is_some();
-        Ok(result)
-    }
+    //     let result = stmt.query(params![user_id, course_id, now_str])?.next()?.is_some();
+    //     Ok(result)
+    // }
 
     // --- 新增的辅助函数 ---
 
     /// 根据ID获取课程套餐信息
+    pub fn get_order_by_id(&self, order_id: i64) -> Result<Option<Order>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id, user_id, package_id, amount, payment_amount, currency, status, created_at, updated_at FROM orders WHERE id = ?")?;
+        stmt.query_row(params![order_id], |row| {
+            Ok(Order {
+                id: row.get(0)?,
+                user_id: row.get(1)?,
+                package_id: row.get(2)?,
+                amount: row.get(3)?,
+                payment_amount: row.get(4)?, // 补上缺失的字段
+                currency: row.get(5)?,
+                status: row.get(6)?,
+                created_at: row.get(7)?,
+                updated_at: row.get(8)?,
+            })
+        }).optional()
+    }
+
+
     pub fn get_package_by_id(&self, package_id: i64) -> Result<Option<CoursePackage>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare("SELECT id, group_id, duration_days, price, currency FROM course_packages WHERE id = ?")?;
@@ -2071,40 +2144,29 @@ impl Database {
         }).optional()
     }
 
-    /// 根据ID获取订单信息
-    pub fn get_order_by_id(&self, order_id: i64) -> Result<Option<Order>> {
-        let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare("SELECT id, user_id, package_id, amount, currency, status, created_at, updated_at FROM orders WHERE id = ?")?;
-        stmt.query_row(params![order_id], |row| {
-            Ok(Order {
-                id: row.get(0)?,
-                user_id: row.get(1)?,
-                package_id: row.get(2)?,
-                amount: row.get(3)?,
-                currency: row.get(4)?,
-                status: row.get(5)?,
-                created_at: row.get(6)?,
-                updated_at: row.get(7)?,
-            })
-        }).optional()
-    }
-    
     /// 获取用户有权访问的所有课程
     pub fn get_accessible_courses_for_user(&self, user_id: i64) -> Result<Vec<Course>> {
         let conn = self.conn.lock().unwrap();
         let now_str = Utc::now().to_rfc3339();
+        let default_group_id = 1; // 定义默认组的ID
+
         let mut stmt = conn.prepare(
             r#"
             SELECT DISTINCT c.id, c.course_type, c.name, c.description, c.content, c.created_at
             FROM courses c
             JOIN course_permission_groups cpg ON c.id = cpg.course_id
-            JOIN user_permission_groups upg ON cpg.group_id = upg.group_id
-            WHERE upg.user_id = ? AND upg.expires_at > ?
+            -- 使用 LEFT JOIN 来包含那些即使用户没有显式权限的课程（比如默认课程）
+            LEFT JOIN user_permission_groups upg ON cpg.group_id = upg.group_id AND upg.user_id = ?
+            WHERE
+                -- 条件1: 用户拥有一个有效的、未过期的权限
+                (upg.expires_at > ?)
+                -- 条件2: 或者课程属于默认权限组
+                OR (cpg.group_id = ?)
             ORDER BY c.created_at DESC
             "#
         )?;
 
-        let courses = stmt.query_map(params![user_id, now_str], |row| {
+        let courses = stmt.query_map(params![user_id, now_str, default_group_id], |row| {
             Ok(Course {
                 id: row.get(0)?,
                 course_type: row.get(1)?,
@@ -2115,6 +2177,168 @@ impl Database {
             })
         })?.collect::<Result<Vec<_>, _>>()?;
         Ok(courses)
+    }
+
+    
+
+
+
+
+
+    // --- 订单管理 (Order Management) ---
+
+    /// (新增) 管理员获取所有订单，可按状态筛选
+    pub fn get_all_orders(&self, status_filter: Option<&str>) -> Result<Vec<Order>> {
+    let conn = self.conn.lock().unwrap();
+    let mut query = "SELECT id, user_id, package_id, amount, payment_amount, currency, status, created_at, updated_at FROM orders".to_string();
+    
+    let mut params_vec: Vec<&dyn rusqlite::ToSql> = Vec::new();
+    let status_val; // 将 status_val 的声明提到 if 之前
+
+    if let Some(status) = status_filter {
+        query.push_str(" WHERE status = ?1");
+        status_val = status.to_string(); // 将值存入 status_val
+        params_vec.push(&status_val);    // 将 status_val 的引用推入向量
+    }
+    
+    query.push_str(" ORDER BY created_at DESC");
+
+    let mut stmt = conn.prepare(&query)?;
+    
+    let orders = stmt.query_map(&params_vec[..], |row| {
+        Ok(Order {
+            id: row.get(0)?,
+            user_id: row.get(1)?,
+            package_id: row.get(2)?,
+            amount: row.get(3)?,
+            payment_amount: row.get(4)?,
+            currency: row.get(5)?,
+            status: row.get(6)?,
+            created_at: row.get(7)?,
+            updated_at: row.get(8)?,
+        })
+    })?.collect::<Result<Vec<_>, _>>()?;
+    Ok(orders)
+}
+
+    // --- 课程管理 (Course Management) ---
+
+    /// (新增) 获取所有课程 (管理员用)
+    pub fn get_all_courses(&self) -> Result<Vec<Course>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id, course_type, name, description, content, created_at FROM courses ORDER BY created_at DESC")?;
+        let courses = stmt.query_map([], |row| {
+            Ok(Course {
+                id: row.get(0)?,
+                course_type: row.get(1)?,
+                name: row.get(2)?,
+                description: row.get(3)?,
+                content: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(courses)
+    }
+
+    /// (新增) 更新课程信息
+    pub fn update_course(&self, course_id: i64, course_type: &str, name: &str, description: &str, content: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE courses SET course_type = ?, name = ?, description = ?, content = ? WHERE id = ?",
+            params![course_type, name, description, content, course_id],
+        )?;
+        Ok(())
+    }
+
+    /// (新增) 删除课程
+    pub fn delete_course(&self, course_id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM courses WHERE id = ?", params![course_id])?;
+        Ok(())
+    }
+
+    // --- 权限组管理 (Permission Group Management) ---
+
+    /// (新增) 更新权限组名称
+    pub fn update_permission_group(&self, group_id: i64, name: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE permission_groups SET name = ? WHERE id = ?",
+            params![name, group_id],
+        )?;
+        Ok(())
+    }
+
+    /// (新增) 删除权限组
+    pub fn delete_permission_group(&self, group_id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM permission_groups WHERE id = ?", params![group_id])?;
+        Ok(())
+    }
+
+
+    // --- 课程套餐管理 (Course Package Management) ---
+
+    /// (新增) 获取所有课程套餐 (管理员用)
+    pub fn get_all_course_packages(&self) -> Result<Vec<CoursePackage>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id, group_id, duration_days, price, currency FROM course_packages ORDER BY id DESC")?;
+        let packages = stmt.query_map([], |row| {
+            Ok(CoursePackage {
+                id: row.get(0)?,
+                group_id: row.get(1)?,
+                duration_days: row.get(2)?,
+                price: row.get(3)?,
+                currency: row.get(4)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(packages)
+    }
+
+    /// (新增) 更新课程套餐信息
+    pub fn update_course_package(&self, package_id: i64, group_id: i64, duration_days: i64, price: f64, currency: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE course_packages SET group_id = ?, duration_days = ?, price = ?, currency = ? WHERE id = ?",
+            params![group_id, duration_days, price, currency, package_id],
+        )?;
+        Ok(())
+    }
+
+    /// (新增) 删除课程套餐
+    pub fn delete_course_package(&self, package_id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM course_packages WHERE id = ?", params![package_id])?;
+        Ok(())
+    }
+
+
+    // --- 用户权限管理 (User Permission Management) ---
+    
+    /// (新增) 获取特定用户的所有权限记录
+    pub fn get_user_permissions(&self, user_id: i64) -> Result<Vec<UserPermissionGroup>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id, user_id, group_id, expires_at, purchased_at FROM user_permission_groups WHERE user_id = ?")?;
+        let permissions = stmt.query_map(params![user_id], |row| {
+            Ok(UserPermissionGroup {
+                id: row.get(0)?,
+                user_id: row.get(1)?,
+                group_id: row.get(2)?,
+                expires_at: row.get(3)?,
+                purchased_at: row.get(4)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(permissions)
+    }
+
+    /// (新增) 移除用户的特定权限
+    pub fn revoke_permission_from_user(&self, user_id: i64, group_id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "DELETE FROM user_permission_groups WHERE user_id = ? AND group_id = ?",
+            params![user_id, group_id],
+        )?;
+        Ok(())
     }
 
 }
@@ -2495,9 +2719,44 @@ pub struct Order {
     pub id: i64,
     pub user_id: i64,
     pub package_id: i64,
-    pub amount: f64,
+    pub amount: f64, // 原始套餐价格
+    #[serde(rename = "paymentAmount")] // JSON响应中的字段名
+    pub payment_amount: f64, // 用户需支付的唯一金额
     pub currency: String,
     pub status: String,
     pub created_at: String,
     pub updated_at: String,
+}
+
+// 新增一个用于返回给API的课程结构体，它包含了权限信息
+#[derive(Debug, Serialize)]
+pub struct CourseDetails {
+    pub id: i64,
+    pub course_type: String,
+    pub name: String,
+    pub description: String,
+    pub content: String, // 在业务逻辑层会决定是否填充
+    #[serde(rename = "isUnlocked")]
+    pub is_unlocked: bool, // 在业务逻辑层填充
+    #[serde(rename = "requiredGroups")]
+    pub required_groups: Vec<PermissionGroupInfo>, // 在业务逻辑层填充
+}
+
+// 一个简单的结构体，用于在查询中组合数据
+#[derive(Debug)]
+pub struct CourseWithGroup {
+    pub course_id: i64,
+    pub course_type: String,
+    pub course_name: String,
+    pub course_description: String,
+    pub course_content: String,
+    pub group_id: i64,
+    pub group_name: String,
+}
+
+// 用于权限组信息的简单结构体
+#[derive(Debug, Serialize, Clone)]
+pub struct PermissionGroupInfo {
+    pub id: i64,
+    pub name: String,
 }
