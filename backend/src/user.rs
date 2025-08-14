@@ -63,8 +63,8 @@ pub struct WithdrawRequest {
 pub struct BindBscAddressRequest {
     #[serde(rename = "bscAddress")]
     pub bsc_address: String,
-    pub message: String, // 离线签名时的原始消息
-    pub signature: String, // 用户离线签名
+    pub message: Option<String>, // 离线签名时的原始消息
+    pub signature: Option<String>, // 用户离线签名
 }
 
 // 获取当前 DAO 拍卖状态的响应结构体
@@ -84,7 +84,6 @@ pub struct CurrentDaoAuctionResponse {
 }
 
 
-// 辅助函数：从请求头中获取用户ID
 pub fn get_user_id_from_token(req: &HttpRequest, jwt_config: &JwtConfig) -> Result<i64, HttpResponse> {
     let auth_header = req.headers().get("Authorization");
 
