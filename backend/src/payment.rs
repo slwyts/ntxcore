@@ -45,8 +45,11 @@ pub async fn create_order(
     // 2. 生成唯一的支付金额
     // 生成一个 0.00001 到 0.00999 之间的随机数
     let random_micro_amount: f64 = rand::thread_rng().gen_range(1..1000) as f64 / 100_000.0;
-    // 加上原始价格，并格式化为小数点后5位，避免浮点数精度问题
-    let payment_amount = (package.price + random_micro_amount * 100_000.0).round() / 100_000.0;
+    // 【修复】修正计算逻辑，避免浮点数精度问题
+    // 先将价格和偏移量都放大为整数，相加后再缩小
+    let price_in_base = (package.price * 100_000.0).round();
+    let offset_in_base = (random_micro_amount * 100_000.0).round();
+    let payment_amount = (price_in_base + offset_in_base) / 100_000.0;
 
     // 3. 创建订单，并存入新的支付金额
     match db.create_order(user_id, order_req.package_id, package.price, payment_amount, &package.currency) {
