@@ -130,14 +130,21 @@ async fn main() -> std::io::Result<()> {
                     .service(user::get_articles) // 获取文章列表
                     .service(user::get_article_detail) // 获取文章详情
                     .service(user::update_user_nickname)
-                    .service(course::get_my_courses) // 获取我的课程
-                    .service(payment::create_order) // 创建订单
-                    .service(payment::get_my_orders) // 获取我的订单
+
+            )
+            .service(
+                web::scope("/api/payment")
+                    .service(payment::get_order_status)
+                    .service(payment::cancel_my_order)
+                    .service(payment::create_order)
+                    .service(payment::get_my_orders)
             )
             .service(
                 web::scope("/api/courses")
                     .service(course::get_all_groups_and_packages)
                     .service(course::get_all_courses_for_user) 
+                    .service(course::get_my_courses)
+
             )
             .service(
                 web::scope("/api/admin")

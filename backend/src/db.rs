@@ -1965,7 +1965,7 @@ impl Database {
     }
 
 
-    /// (新增) 获取所有课程及其关联的权限组信息
+    ///获取所有课程及其关联的权限组信息
     pub fn get_all_courses_with_their_groups(&self) -> Result<Vec<CourseWithGroup>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -1995,7 +1995,7 @@ impl Database {
         course_iter.collect()
     }
 
-    /// (新增) 获取用户所有有效的权限组ID集合 (包括默认组)
+    ///获取用户所有有效的权限组ID集合 (包括默认组)
     pub fn get_user_active_permission_ids(&self, user_id: i64) -> Result<HashSet<i64>> {
         let conn = self.conn.lock().unwrap();
         let now_str = Utc::now().to_rfc3339();
@@ -2050,6 +2050,7 @@ impl Database {
                 status: row.get(6)?,
                 created_at: row.get(7)?,
                 updated_at: row.get(8)?,
+                remaining_time_seconds: None, // <-- ADD THIS LINE
             })
         })?.collect::<Result<Vec<_>, _>>()?;
         Ok(orders)
@@ -2112,7 +2113,7 @@ impl Database {
 
     // 放置在 impl Database 块内的任意位置
 
-    /// (新增) 获取单个课程已关联的所有权限组ID
+    ///获取单个课程已关联的所有权限组ID
     pub fn get_group_ids_for_course(&self, course_id: i64) -> Result<Vec<i64>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare("SELECT group_id FROM course_permission_groups WHERE course_id = ?")?;
@@ -2130,11 +2131,12 @@ impl Database {
                 user_id: row.get(1)?,
                 package_id: row.get(2)?,
                 amount: row.get(3)?,
-                payment_amount: row.get(4)?, // 补上缺失的字段
+                payment_amount: row.get(4)?, 
                 currency: row.get(5)?,
                 status: row.get(6)?,
                 created_at: row.get(7)?,
                 updated_at: row.get(8)?,
+                remaining_time_seconds: None,
             })
         }).optional()
     }
@@ -2197,43 +2199,44 @@ impl Database {
 
     // --- 订单管理 (Order Management) ---
 
-    /// (新增) 管理员获取所有订单，可按状态筛选
+    ///管理员获取所有订单，可按状态筛选
     pub fn get_all_orders(&self, status_filter: Option<&str>) -> Result<Vec<Order>> {
-    let conn = self.conn.lock().unwrap();
-    let mut query = "SELECT id, user_id, package_id, amount, payment_amount, currency, status, created_at, updated_at FROM orders".to_string();
-    
-    let mut params_vec: Vec<&dyn rusqlite::ToSql> = Vec::new();
-    let status_val; // 将 status_val 的声明提到 if 之前
+        let conn = self.conn.lock().unwrap();
+        let mut query = "SELECT id, user_id, package_id, amount, payment_amount, currency, status, created_at, updated_at FROM orders".to_string();
+        
+        let mut params_vec: Vec<&dyn rusqlite::ToSql> = Vec::new();
+        let status_val; // 将 status_val 的声明提到 if 之前
 
-    if let Some(status) = status_filter {
-        query.push_str(" WHERE status = ?1");
-        status_val = status.to_string(); // 将值存入 status_val
-        params_vec.push(&status_val);    // 将 status_val 的引用推入向量
+        if let Some(status) = status_filter {
+            query.push_str(" WHERE status = ?1");
+            status_val = status.to_string(); // 将值存入 status_val
+            params_vec.push(&status_val);    // 将 status_val 的引用推入向量
+        }
+        
+        query.push_str(" ORDER BY created_at DESC");
+
+        let mut stmt = conn.prepare(&query)?;
+        
+        let orders = stmt.query_map(&params_vec[..], |row| {
+            Ok(Order {
+                id: row.get(0)?,
+                user_id: row.get(1)?,
+                package_id: row.get(2)?,
+                amount: row.get(3)?,
+                payment_amount: row.get(4)?,
+                currency: row.get(5)?,
+                status: row.get(6)?,
+                created_at: row.get(7)?,
+                updated_at: row.get(8)?,
+                remaining_time_seconds: None, // <-- ADD THIS LINE
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(orders)
     }
-    
-    query.push_str(" ORDER BY created_at DESC");
-
-    let mut stmt = conn.prepare(&query)?;
-    
-    let orders = stmt.query_map(&params_vec[..], |row| {
-        Ok(Order {
-            id: row.get(0)?,
-            user_id: row.get(1)?,
-            package_id: row.get(2)?,
-            amount: row.get(3)?,
-            payment_amount: row.get(4)?,
-            currency: row.get(5)?,
-            status: row.get(6)?,
-            created_at: row.get(7)?,
-            updated_at: row.get(8)?,
-        })
-    })?.collect::<Result<Vec<_>, _>>()?;
-    Ok(orders)
-}
 
     // --- 课程管理 (Course Management) ---
 
-    /// (新增) 获取所有课程 (管理员用)
+    ///获取所有课程 (管理员用)
     pub fn get_all_courses(&self) -> Result<Vec<Course>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare("SELECT id, course_type, name, description, content, created_at FROM courses ORDER BY created_at DESC")?;
@@ -2250,7 +2253,7 @@ impl Database {
         Ok(courses)
     }
 
-    /// (新增) 更新课程信息
+    ///更新课程信息
     pub fn update_course(&self, course_id: i64, course_type: &str, name: &str, description: &str, content: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
@@ -2260,7 +2263,7 @@ impl Database {
         Ok(())
     }
 
-    /// (新增) 删除课程
+    ///删除课程
     pub fn delete_course(&self, course_id: i64) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM courses WHERE id = ?", params![course_id])?;
@@ -2269,7 +2272,7 @@ impl Database {
 
     // --- 权限组管理 (Permission Group Management) ---
 
-    /// (新增) 更新权限组名称
+    ///更新权限组名称
     pub fn update_permission_group(&self, group_id: i64, name: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
@@ -2279,7 +2282,7 @@ impl Database {
         Ok(())
     }
 
-    /// (新增) 删除权限组
+    ///删除权限组
     pub fn delete_permission_group(&self, group_id: i64) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM permission_groups WHERE id = ?", params![group_id])?;
@@ -2289,7 +2292,7 @@ impl Database {
 
     // --- 课程套餐管理 (Course Package Management) ---
 
-    /// (新增) 获取所有课程套餐 (管理员用)
+    ///获取所有课程套餐 (管理员用)
     pub fn get_all_course_packages(&self) -> Result<Vec<CoursePackage>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare("SELECT id, group_id, duration_days, price, currency FROM course_packages ORDER BY id DESC")?;
@@ -2305,7 +2308,7 @@ impl Database {
         Ok(packages)
     }
 
-    /// (新增) 更新课程套餐信息
+    ///更新课程套餐信息
     pub fn update_course_package(&self, package_id: i64, group_id: i64, duration_days: i64, price: f64, currency: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
@@ -2315,7 +2318,7 @@ impl Database {
         Ok(())
     }
 
-    /// (新增) 删除课程套餐
+    ///删除课程套餐
     pub fn delete_course_package(&self, package_id: i64) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM course_packages WHERE id = ?", params![package_id])?;
@@ -2325,7 +2328,7 @@ impl Database {
 
     // --- 用户权限管理 (User Permission Management) ---
     
-    /// (新增) 获取特定用户的所有权限记录
+    ///获取特定用户的所有权限记录
     pub fn get_user_permissions(&self, user_id: i64) -> Result<Vec<UserPermissionGroup>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare("SELECT id, user_id, group_id, expires_at, purchased_at FROM user_permission_groups WHERE user_id = ?")?;
@@ -2341,7 +2344,7 @@ impl Database {
         Ok(permissions)
     }
 
-    /// (新增) 移除用户的特定权限
+    ///移除用户的特定权限
     pub fn revoke_permission_from_user(&self, user_id: i64, group_id: i64) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
@@ -2351,6 +2354,37 @@ impl Database {
         Ok(())
     }
 
+    ///关闭所有超过30分钟还未支付的待处理订单
+    pub fn close_expired_orders(&self) -> Result<usize> {
+        let conn = self.conn.lock().unwrap();
+        let thirty_minutes_ago = (Utc::now() - chrono::Duration::minutes(30)).to_rfc3339();
+        
+        let rows_affected = conn.execute(
+            "UPDATE orders SET status = 'closed', updated_at = ?1 WHERE status = 'pending' AND created_at <= ?2",
+            params![Utc::now().to_rfc3339(), thirty_minutes_ago],
+        )?;
+
+        if rows_affected > 0 {
+            println!("[Order Cleanup] Closed {} expired orders.", rows_affected);
+        }
+        
+        Ok(rows_affected)
+    }
+
+    ///用户主动取消订单
+    pub fn cancel_order(&self, order_id: i64, user_id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let rows_affected = conn.execute(
+            "UPDATE orders SET status = 'closed', updated_at = ?1 WHERE id = ?2 AND user_id = ?3 AND status = 'pending'",
+            params![Utc::now().to_rfc3339(), order_id, user_id],
+        )?;
+
+        if rows_affected == 0 {
+            // 这可能意味着订单不存在、不属于该用户或状态不是pending
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        }
+        Ok(())
+    }
 }
 
 
@@ -2730,12 +2764,14 @@ pub struct Order {
     pub user_id: i64,
     pub package_id: i64,
     pub amount: f64, // 原始套餐价格
-    #[serde(rename = "paymentAmount")] // JSON响应中的字段名
+    #[serde(rename = "paymentAmount")]
     pub payment_amount: f64, // 用户需支付的唯一金额
     pub currency: String,
     pub status: String,
     pub created_at: String,
     pub updated_at: String,
+    #[serde(rename = "remainingTimeSeconds", skip_serializing_if = "Option::is_none")]
+    pub remaining_time_seconds: Option<i64>,
 }
 
 // 新增一个用于返回给API的课程结构体，它包含了权限信息

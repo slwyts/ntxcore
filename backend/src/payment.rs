@@ -1,12 +1,13 @@
 // src/payment.rs
 use actix_web::{get, post, web, HttpResponse, Responder, HttpRequest};
-use serde::{Deserialize};
+use serde::{Deserialize,Serialize};
 use std::env;
 use crate::db::Database;
 use crate::middleware::AdminAuth;
 use crate::user::get_user_id_from_token;
 use crate::JwtConfig;
 use rand::Rng;
+use chrono::{DateTime, Utc};
 
 // --- 请求体定义 ---
 
@@ -20,7 +21,33 @@ pub struct OrderQuery {
     pub status: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct OrderStatusRequest {
+    #[serde(rename = "orderID")]
+    pub order_id: i64,
+}
+
+#[derive(Serialize)]
+pub struct OrderStatusResponse {
+    pub status: String,
+    #[serde(rename = "remainingTimeSeconds", skip_serializing_if = "Option::is_none")]
+    pub remaining_time_seconds: Option<i64>,
+}
+
 // --- 路由处理函数 ---
+
+
+fn calculate_remaining_time(created_at_str: &str) -> Option<i64> {
+    if let Ok(created_at) = DateTime::parse_from_rfc3339(created_at_str) {
+        let created_at_utc: DateTime<Utc> = created_at.into();
+        let expires_at = created_at_utc + chrono::Duration::minutes(30);
+        let now = Utc::now();
+        if now < expires_at {
+            return Some((expires_at - now).num_seconds());
+        }
+    }
+    Some(0)
+}
 
 // 用户创建订单
 #[post("/orders")]
@@ -72,7 +99,6 @@ pub async fn create_order(
 }
 
 
-// 用户获取自己的订单列表
 #[get("/orders")]
 pub async fn get_my_orders(
     db: web::Data<Database>,
@@ -85,7 +111,15 @@ pub async fn get_my_orders(
     };
 
     match db.get_user_orders(user_id) {
-        Ok(orders) => HttpResponse::Ok().json(orders),
+        Ok(mut orders) => {
+            // --- 新增逻辑：为 pending 状态的订单计算剩余时间 ---
+            for order in orders.iter_mut() {
+                if order.status == "pending" {
+                    order.remaining_time_seconds = calculate_remaining_time(&order.created_at);
+                }
+            }
+            HttpResponse::Ok().json(orders)
+        },
         Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({"error": e.to_string()})),
     }
 }
@@ -138,6 +172,66 @@ pub async fn get_all_orders_admin(
 ) -> impl Responder {
     match db.get_all_orders(query.status.as_deref()) {
         Ok(orders) => HttpResponse::Ok().json(orders),
+        Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({"error": e.to_string()})),
+    }
+}
+
+// 获取订单状态
+#[post("/status")]
+pub async fn get_order_status(
+    db: web::Data<Database>,
+    jwt_config: web::Data<JwtConfig>,
+    req: HttpRequest,
+    status_req: web::Json<OrderStatusRequest>,
+) -> impl Responder {
+    let user_id = match get_user_id_from_token(&req, &jwt_config) {
+        Ok(id) => id,
+        Err(resp) => return resp,
+    };
+
+    match db.get_order_by_id(status_req.order_id) {
+        Ok(Some(order)) => {
+            // 确保用户只能查询自己的订单
+            if order.user_id != user_id {
+                return HttpResponse::Forbidden().json(serde_json::json!({"error": "无权访问此订单"}));
+            }
+            
+            let mut response = OrderStatusResponse {
+                status: order.status.clone(),
+                remaining_time_seconds: None,
+            };
+
+            if order.status == "pending" {
+                response.remaining_time_seconds = calculate_remaining_time(&order.created_at);
+            }
+
+            HttpResponse::Ok().json(response)
+        },
+        Ok(None) => HttpResponse::NotFound().json(serde_json::json!({"error": "订单不存在"})),
+        Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({"error": e.to_string()})),
+    }
+}
+
+// 用户取消订单
+#[post("/orders/{order_id}/cancel")]
+pub async fn cancel_my_order(
+    db: web::Data<Database>,
+    jwt_config: web::Data<JwtConfig>,
+    req: HttpRequest,
+    path: web::Path<i64>,
+) -> impl Responder {
+    let user_id = match get_user_id_from_token(&req, &jwt_config) {
+        Ok(id) => id,
+        Err(resp) => return resp,
+    };
+    let order_id = path.into_inner();
+
+    match db.cancel_order(order_id, user_id) {
+        Ok(_) => HttpResponse::Ok().json(serde_json::json!({"message": "订单已取消"})),
+        Err(rusqlite::Error::QueryReturnedNoRows) => {
+            // 这个错误意味着订单不存在、不属于该用户或状态不是 "pending"
+            HttpResponse::Forbidden().json(serde_json::json!({"error": "无法取消此订单"}))
+        },
         Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({"error": e.to_string()})),
     }
 }

@@ -3,7 +3,7 @@ use chrono::{Local, NaiveTime};
 use chrono::Timelike;
 use actix_web::web::Data;
 use crate::db::Database;
-// use crate::settlement::{trigger_daily_settlement, force_ntx_control};
+use tokio::time::interval;
 
 pub async fn start_scheduled_tasks(db: Data<Database>) {
     let db_clone = db.clone();
@@ -18,6 +18,10 @@ pub async fn start_scheduled_tasks(db: Data<Database>) {
         if let Err(e) = schedule_task("NTX_CONTROL_TIME", db_clone.clone(), force_ntx_control_task).await {
             eprintln!("NTX分配控制任务失败: {}", e);
         }
+    });
+    let db_clone_for_orders = db.clone();
+    tokio::spawn(async move {
+        order_cleanup_task(db_clone_for_orders);
     });
 }
 
@@ -74,4 +78,15 @@ fn force_ntx_control_task(db: Data<Database>) -> Result<(), Box<dyn std::error::
         }
     });
     Ok(())
+}
+fn order_cleanup_task(db: Data<Database>) {
+    tokio::spawn(async move {
+        let mut interval = interval(Duration::from_secs(60)); // 每60秒检查一次
+        loop {
+            interval.tick().await;
+            if let Err(e) = db.close_expired_orders() {
+                eprintln!("[Order Cleanup Task] Error closing expired orders: {}", e);
+            }
+        }
+    });
 }
