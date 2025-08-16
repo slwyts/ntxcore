@@ -2,11 +2,28 @@
 use actix_web::{get, post, web, HttpResponse, Responder, HttpRequest, put, delete};
 use serde::{Deserialize};
 use crate::db::Database;
-use crate::middleware::AdminAuth; // 管理员权限验证
-use crate::user::get_user_id_from_token; // 获取用户ID
+use crate::middleware::AdminAuth;
+use crate::user::get_user_id_from_token;
 use crate::JwtConfig;
 use crate::db::{CourseDetails, PermissionGroupInfo};
 use std::collections::{HashMap, HashSet};
+use regex::Regex;
+
+fn extract_link_and_update_text(text: &mut String) -> Option<String> {
+    let re = Regex::new(r"^<([^>]+)>(.*)").unwrap();
+    if let Some(caps) = re.captures(text.as_str()) {
+        let link = caps.get(1).map_or("", |m| m.as_str()).to_string();
+        let rest = caps.get(2).map_or("", |m| m.as_str()).to_string();
+        *text = rest;
+        if link.is_empty() {
+            None
+        } else {
+            Some(link)
+        }
+    } else {
+        None
+    }
+}
 // --- 请求体定义 ---
 
 #[derive(Deserialize)]
@@ -28,6 +45,8 @@ pub struct CreateCourseRequest {
     pub name: String,
     pub description: String,
     pub content: String,
+    pub image: Option<String>,
+    pub link: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -55,6 +74,8 @@ pub struct UpdateCourseRequest {
     pub name: String,
     pub description: String,
     pub content: String,
+    pub image: Option<String>,
+    pub link: Option<String>,
 }
 
 // 用于手动授权的请求体
@@ -107,7 +128,7 @@ pub async fn create_course(
     db: web::Data<Database>,
     req: web::Json<CreateCourseRequest>,
 ) -> impl Responder {
-    match db.create_course(&req.course_type, &req.name, &req.description, &req.content) {
+    match db.create_course(&req.course_type, &req.name, &req.description, &req.content, req.image.as_deref(), req.link.as_deref()) {
         Ok(course_id) => HttpResponse::Ok().json(serde_json::json!({
             "message": "课程创建成功",
             "id": course_id
@@ -199,14 +220,21 @@ pub async fn get_all_courses_for_user(
     let mut courses_map: HashMap<i64, CourseDetails> = HashMap::new();
 
     for item in all_courses_with_groups {
-        let course = courses_map.entry(item.course_id).or_insert_with(|| CourseDetails {
-            id: item.course_id,
-            course_type: item.course_type.clone(),
-            name: item.course_name.clone(),
-            description: item.course_description.clone(),
-            content: item.course_content.clone(), // 先临时保存
-            is_unlocked: false, // 默认为未解锁
-            required_groups: Vec::new(),
+        let course = courses_map.entry(item.course_id).or_insert_with(|| {
+            let mut description = item.course_description.clone();
+            let image = extract_link_and_update_text(&mut description);
+
+            CourseDetails {
+                id: item.course_id,
+                course_type: item.course_type.clone(),
+                name: item.course_name.clone(),
+                description,
+                content: item.course_content.clone(), // 先临时保存
+                is_unlocked: false, // 默认为未解锁
+                required_groups: Vec::new(),
+                image,
+                link: None,
+            }
         });
         // 添加解锁当前课程所需的权限组信息
         course.required_groups.push(PermissionGroupInfo { id: item.group_id, name: item.group_name });
@@ -218,8 +246,13 @@ pub async fn get_all_courses_for_user(
         let is_unlocked = course.required_groups.iter().any(|group| user_permission_ids.contains(&group.id));
         course.is_unlocked = is_unlocked;
 
-        if !is_unlocked {
+        if is_unlocked {
+            let mut content = course.content.clone();
+            course.link = extract_link_and_update_text(&mut content);
+            course.content = content;
+        } else {
             course.content = "".to_string(); // 如果未解锁，清空内容
+            course.link = None;
         }
         course
     }).collect();
@@ -270,7 +303,7 @@ pub async fn get_all_courses_admin(db: web::Data<Database>) -> impl Responder {
 #[put("/courses/{id}", wrap="AdminAuth")]
 pub async fn update_course(db: web::Data<Database>, path: web::Path<i64>, req: web::Json<UpdateCourseRequest>) -> impl Responder {
     let course_id = path.into_inner();
-    match db.update_course(course_id, &req.course_type, &req.name, &req.description, &req.content) {
+    match db.update_course(course_id, &req.course_type, &req.name, &req.description, &req.content, req.image.as_deref(), req.link.as_deref()) {
         Ok(_) => HttpResponse::Ok().json(serde_json::json!({"message": "课程更新成功"})),
         Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({"error": e.to_string()})),
     }
@@ -319,4 +352,3 @@ pub async fn delete_course_package(db: web::Data<Database>, path: web::Path<i64>
         Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({"error": e.to_string()})),
     }
 }
-

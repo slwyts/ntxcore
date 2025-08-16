@@ -6,6 +6,24 @@ use std::collections::{HashMap, HashSet};
 use chrono::{Utc};
 use rusqlite::ffi;
 use serde::Serialize;
+use regex::Regex;
+
+fn extract_link_and_update_text(text: &mut String) -> Option<String> {
+    let re = Regex::new(r"^<([^>]+)>(.*)").unwrap();
+    if let Some(caps) = re.captures(text.as_str()) {
+        let link = caps.get(1).map_or("", |m| m.as_str()).to_string();
+        let rest = caps.get(2).map_or("", |m| m.as_str()).to_string();
+        *text = rest;
+        if link.is_empty() {
+            None
+        } else {
+            Some(link)
+        }
+    } else {
+        None
+    }
+}
+
 
 pub struct Database {
     pub conn: Arc<Mutex<Connection>>,
@@ -1945,11 +1963,21 @@ impl Database {
     // --- 课程 (Courses) 操作 ---
 
     /// 创建一个新课程
-    pub fn create_course(&self, course_type: &str, name: &str, description: &str, content: &str) -> Result<i64> {
+    pub fn create_course(&self, course_type: &str, name: &str, description: &str, content: &str, image: Option<&str>, link: Option<&str>) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
+        let final_description = if let Some(img) = image {
+            format!("<{}>{}", img, description)
+        } else {
+            format!("<>{}", description)
+        };
+        let final_content = if let Some(l) = link {
+            format!("<{}>{}", l, content)
+        } else {
+            format!("<>{}", content)
+        };
         conn.execute(
             "INSERT INTO courses (course_type, name, description, content) VALUES (?, ?, ?, ?)",
-            params![course_type, name, description, content],
+            params![course_type, name, final_description, final_content],
         )?;
         Ok(conn.last_insert_rowid())
     }
@@ -2186,6 +2214,8 @@ impl Database {
                 description: row.get(3)?,
                 content: row.get(4)?,
                 created_at: row.get(5)?,
+                image: None,
+                link: None,
             })
         })?.collect::<Result<Vec<_>, _>>()?;
         Ok(courses)
@@ -2240,25 +2270,43 @@ impl Database {
     pub fn get_all_courses(&self) -> Result<Vec<Course>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare("SELECT id, course_type, name, description, content, created_at FROM courses ORDER BY created_at DESC")?;
-        let courses = stmt.query_map([], |row| {
+        let courses_iter = stmt.query_map([], |row| {
+            let mut description: String = row.get(3)?;
+            let mut content: String = row.get(4)?;
+            let image = extract_link_and_update_text(&mut description);
+            let link = extract_link_and_update_text(&mut content);
+    
             Ok(Course {
                 id: row.get(0)?,
                 course_type: row.get(1)?,
                 name: row.get(2)?,
-                description: row.get(3)?,
-                content: row.get(4)?,
+                description,
+                content,
                 created_at: row.get(5)?,
+                image,
+                link,
             })
-        })?.collect::<Result<Vec<_>, _>>()?;
-        Ok(courses)
+        })?;
+    
+        courses_iter.collect::<Result<Vec<_>, _>>()
     }
 
     ///更新课程信息
-    pub fn update_course(&self, course_id: i64, course_type: &str, name: &str, description: &str, content: &str) -> Result<()> {
+    pub fn update_course(&self, course_id: i64, course_type: &str, name: &str, description: &str, content: &str, image: Option<&str>, link: Option<&str>) -> Result<()> {
         let conn = self.conn.lock().unwrap();
+        let final_description = if let Some(img) = image {
+            format!("<{}>{}", img, description)
+        } else {
+            format!("<>{}", description)
+        };
+        let final_content = if let Some(l) = link {
+            format!("<{}>{}", l, content)
+        } else {
+            format!("<>{}", content)
+        };
         conn.execute(
             "UPDATE courses SET course_type = ?, name = ?, description = ?, content = ? WHERE id = ?",
-            params![course_type, name, description, content, course_id],
+            params![course_type, name, final_description, final_content, course_id],
         )?;
         Ok(())
     }
@@ -2755,6 +2803,10 @@ pub struct Course {
     pub description: String,
     pub content: String,
     pub created_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub link: Option<String>,
 }
 
 // 订单结构体
@@ -2786,6 +2838,10 @@ pub struct CourseDetails {
     pub is_unlocked: bool, // 在业务逻辑层填充
     #[serde(rename = "requiredGroups")]
     pub required_groups: Vec<PermissionGroupInfo>, // 在业务逻辑层填充
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub link: Option<String>,
 }
 
 // 一个简单的结构体，用于在查询中组合数据

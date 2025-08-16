@@ -114,7 +114,7 @@
 
 #### 3\. 获取我购买的课程
 
-  * **Endpoint**: `GET /api/user/my_courses`
+  * **Endpoint**: `GET /api/courses/my_courses`
   * **认证**: **必须**
   * **功能**: 获取当前登录用户已拥有访问权限的所有课程列表。
   * **返回信息解释**: 返回一个课程对象的数组，结构与 `GET /api/courses/all` 中的单个课程对象相同，但只包含已解锁的课程。

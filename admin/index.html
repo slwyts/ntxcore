@@ -1299,6 +1299,14 @@
                             <textarea id="course-content" rows="8" required></textarea>
                         </div>
                         <div class="form-group">
+                            <label for="course-image">课程图片链接 (Image URL):</label>
+                            <input type="text" id="course-image">
+                        </div>
+                        <div class="form-group">
+                            <label for="course-link">课程外部链接 (Link URL):</label>
+                            <input type="text" id="course-link">
+                        </div>
+                        <div class="form-group">
                             <label>分配到权限组:</label>
                             <div id="course-permission-groups-checkboxes"></div>
                         </div>
@@ -2743,7 +2751,9 @@
                     document.getElementById('course-name').value = course.name;
                     document.getElementById('course-description').value = course.description;
                     document.getElementById('course-content').value = course.content;
-                    
+                    document.getElementById('course-image').value = course.image || ''; // 设置 image 输入框的值
+                    document.getElementById('course-link').value = course.link || '';   // 设置 link 输入框的值
+
                     // 1. 调用新API获取该课程已关联的权限组ID
                     const associatedGroupIds = await fetchData(`/courses/${courseId}/groups`);
                     
@@ -3045,7 +3055,9 @@ document.getElementById('course-form').addEventListener('submit', async (e) => {
         course_type: document.getElementById('course-type').value,
         name: document.getElementById('course-name').value,
         description: document.getElementById('course-description').value,
-        content: document.getElementById('course-content').value
+        content: document.getElementById('course-content').value,
+        image: document.getElementById('course-image').value || null, // 获取 image 输入框的值
+        link: document.getElementById('course-link').value || null   // 获取 link 输入框的值
     };
     const endpoint = id ? `/courses/${id}` : '/courses';
     const method = id ? 'PUT' : 'POST';
