@@ -10,11 +10,21 @@ use std::collections::{HashMap, HashSet};
 use regex::Regex;
 
 fn extract_link_and_update_text(text: &mut String) -> Option<String> {
-    let re = Regex::new(r"^<([^>]+)>(.*)").unwrap();
+    // 使用 regex crate 来解析链接
+    // 正则表达式 ^<([^>]*)>(.*) 的含义:
+    // ^         - 匹配字符串的开始
+    // <         - 匹配字面量 '<'
+    // ([^>]*) - 捕获组1: 匹配任何不是 '>' 的字符, 零次或多次 (允许像 <> 这样的空链接)
+    // >         - 匹配字面量 '>'
+    // (.*)      - 捕获组2: 匹配剩余的所有字符
+    let re = Regex::new(r"^<([^>]*)>(.*)").unwrap();
     if let Some(caps) = re.captures(text.as_str()) {
-        let link = caps.get(1).map_or("", |m| m.as_str()).to_string();
-        let rest = caps.get(2).map_or("", |m| m.as_str()).to_string();
+        let link = caps.get(1).map_or("".to_string(), |m| m.as_str().to_string());
+        let rest = caps.get(2).map_or("".to_string(), |m| m.as_str().trim_start().to_string());
+        
+        // 无论链接是否为空, 都更新原始文本, 去掉 <...> 部分
         *text = rest;
+        
         if link.is_empty() {
             None
         } else {
@@ -185,7 +195,23 @@ pub async fn get_my_courses(
     };
     
     match db.get_accessible_courses_for_user(user_id) {
-        Ok(courses) => HttpResponse::Ok().json(courses),
+        Ok(courses) => {
+            // 对每个课程进行处理，提取 image 和 link
+            let processed_courses: Vec<crate::db::Course> = courses.into_iter().map(|mut course| {
+                // 从 description 提取 image
+                let mut description = course.description.clone();
+                course.image = extract_link_and_update_text(&mut description);
+                course.description = description;
+
+                // 从 content 提取 link
+                let mut content = course.content.clone();
+                course.link = extract_link_and_update_text(&mut content);
+                course.content = content;
+                
+                course
+            }).collect();
+            HttpResponse::Ok().json(processed_courses)
+        },
         Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({"error": e.to_string()}))
     }
 }

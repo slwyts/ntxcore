@@ -1965,22 +1965,23 @@ impl Database {
     /// 创建一个新课程
     pub fn create_course(&self, course_type: &str, name: &str, description: &str, content: &str, image: Option<&str>, link: Option<&str>) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
-        let final_description = if let Some(img) = image {
-            format!("<{}>{}", img, description)
-        } else {
-            format!("<>{}", description)
-        };
-        let final_content = if let Some(l) = link {
-            format!("<{}>{}", l, content)
-        } else {
-            format!("<>{}", content)
-        };
+        // 如果 image URL 存在且不为空，则添加 <...> 标记，否则直接使用 description
+        let final_description = image.filter(|s| !s.is_empty())
+                                     .map(|img| format!("<{}>{}", img, description))
+                                     .unwrap_or_else(|| description.to_string());
+        
+        // 如果 link URL 存在且不为空，则添加 <...> 标记，否则直接使用 content
+        let final_content = link.filter(|s| !s.is_empty())
+                                .map(|l| format!("<{}>{}", l, content))
+                                .unwrap_or_else(|| content.to_string());
+
         conn.execute(
             "INSERT INTO courses (course_type, name, description, content) VALUES (?, ?, ?, ?)",
             params![course_type, name, final_description, final_content],
         )?;
         Ok(conn.last_insert_rowid())
     }
+
 
     /// 将课程分配给一个权限组
     pub fn assign_course_to_group(&self, course_id: i64, group_id: i64) -> Result<()> {
@@ -2294,16 +2295,16 @@ impl Database {
     ///更新课程信息
     pub fn update_course(&self, course_id: i64, course_type: &str, name: &str, description: &str, content: &str, image: Option<&str>, link: Option<&str>) -> Result<()> {
         let conn = self.conn.lock().unwrap();
-        let final_description = if let Some(img) = image {
-            format!("<{}>{}", img, description)
-        } else {
-            format!("<>{}", description)
-        };
-        let final_content = if let Some(l) = link {
-            format!("<{}>{}", l, content)
-        } else {
-            format!("<>{}", content)
-        };
+        // 如果 image URL 存在且不为空，则添加 <...> 标记，否则直接使用 description
+        let final_description = image.filter(|s| !s.is_empty())
+                                     .map(|img| format!("<{}>{}", img, description))
+                                     .unwrap_or_else(|| description.to_string());
+
+        // 如果 link URL 存在且不为空，则添加 <...> 标记，否则直接使用 content
+        let final_content = link.filter(|s| !s.is_empty())
+                                .map(|l| format!("<{}>{}", l, content))
+                                .unwrap_or_else(|| content.to_string());
+                                
         conn.execute(
             "UPDATE courses SET course_type = ?, name = ?, description = ?, content = ? WHERE id = ?",
             params![course_type, name, final_description, final_content, course_id],
