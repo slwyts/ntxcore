@@ -968,7 +968,7 @@
                                 <th>套餐ID</th>
                                 <th>原始金额</th>
                                 <th>支付金额</th>
-                                <th>状态</th>
+                                <th>支付地址</th> <th>状态</th>
                                 <th>创建时间</th>
                                 <th>操作</th>
                             </tr>
@@ -2539,7 +2539,7 @@
                     <td>${order.package_id}</td>
                     <td>${order.amount.toFixed(2)}</td>
                     <td>${order.paymentAmount.toFixed(5)}</td>
-                    <td>${order.status}</td>
+                    <td>${order.paymentAddress || 'N/A'}</td> <td>${order.status}</td>
                     <td>${formatDateTime(order.created_at)}</td>
                     <td>${actionsHtml || '无操作'}</td>
                 `;
@@ -3056,24 +3056,28 @@ document.getElementById('course-form').addEventListener('submit', async (e) => {
         name: document.getElementById('course-name').value,
         description: document.getElementById('course-description').value,
         content: document.getElementById('course-content').value,
-        image: document.getElementById('course-image').value || null, // 获取 image 输入框的值
-        link: document.getElementById('course-link').value || null   // 获取 link 输入框的值
+        image: document.getElementById('course-image').value || null,
+        link: document.getElementById('course-link').value || null
     };
     const endpoint = id ? `/courses/${id}` : '/courses';
     const method = id ? 'PUT' : 'POST';
-    
+
+    // 先保存课程的基本信息
     const result = await fetchData(endpoint, method, payload);
-    if (result && result.id) { // 创建成功后，处理权限组关联
+
+    if (result) {
+        // 无论创建还是更新，都获取课程ID
         const courseId = id || result.id;
+        
+        // 获取所有被勾选的权限组ID
         const groupCheckboxes = document.querySelectorAll('input[name="course-permission-group"]:checked');
-        for (const checkbox of groupCheckboxes) {
-            await fetchData(`/courses/${courseId}/assign_group`, 'POST', { group_id: parseInt(checkbox.value) });
-        }
-        Swal.fire('成功', '课程已保存', 'success');
-        document.getElementById('course-modal').style.display = 'none';
-        loadCourses();
-    } else if (result) { // 更新成功
-        Swal.fire('成功', '课程已更新', 'success');
+        const selectedGroupIds = Array.from(groupCheckboxes).map(cb => parseInt(cb.value));
+
+        // 调用新的后端接口来更新权限组关联
+        await fetchData(`/courses/${courseId}/groups`, 'PUT', selectedGroupIds);
+        
+        // 显示成功信息
+        Swal.fire('成功', `课程已${id ? '更新' : '保存'}`, 'success');
         document.getElementById('course-modal').style.display = 'none';
         loadCourses();
     }

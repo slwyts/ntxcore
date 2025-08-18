@@ -216,6 +216,7 @@ async fn main() -> std::io::Result<()> {
                     .service(course::create_course_package)     // 创建套餐 (已有)
                     .service(course::update_course_package)     // 更新套餐
                     .service(course::delete_course_package)     // 删除套餐
+                    .service(course::update_course_groups)      // 更新课程权限组信息
 
                     .service(admin::get_user_permissions_admin) // 查看用户权限
                     .service(admin::grant_permission_admin)     // 手动授予权限

@@ -112,8 +112,14 @@ pub async fn get_my_orders(
 
     match db.get_user_orders(user_id) {
         Ok(mut orders) => {
-            // --- 新增逻辑：为 pending 状态的订单计算剩余时间 ---
+            // 从环境变量获取支付地址
+            let payment_address = env::var("PAYMENT_RECEIVING_ADDRESS")
+                .unwrap_or_else(|_| "YOUR_DEFAULT_WALLET_ADDRESS_NOT_SET".to_string());
+
             for order in orders.iter_mut() {
+                // 为每个订单添加支付地址
+                order.payment_address = Some(payment_address.clone());
+
                 if order.status == "pending" {
                     order.remaining_time_seconds = calculate_remaining_time(&order.created_at);
                 }

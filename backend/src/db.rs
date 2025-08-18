@@ -243,12 +243,13 @@ impl Database {
 
 //class system + pay system
 
-        // 新增：权限组表
+        // 权限组表
         conn.execute(
             r#"
             CREATE TABLE IF NOT EXISTS permission_groups (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL UNIQUE,
+                description TEXT, -- <-- 新增这一行
                 created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
             )
             "#,
@@ -260,7 +261,7 @@ impl Database {
             [],
         )?;
 
-        // 新增：课程套餐表
+        // 课程套餐表
         conn.execute(
             r#"
             CREATE TABLE IF NOT EXISTS course_packages (
@@ -268,14 +269,14 @@ impl Database {
                 group_id INTEGER NOT NULL,
                 duration_days INTEGER NOT NULL,
                 price REAL NOT NULL,
-                currency TEXT NOT NULL DEFAULT 'USDT',
+                currency TEXT NOT NULL DEFAULT 'BEP20-USDT',
                 FOREIGN KEY (group_id) REFERENCES permission_groups(id) ON DELETE CASCADE
             )
             "#,
             [],
         )?;
 
-        // 新增：用户权限组关联表
+        // 用户权限组关联表
         conn.execute(
             r#"
             CREATE TABLE IF NOT EXISTS user_permission_groups (
@@ -292,7 +293,7 @@ impl Database {
             [],
         )?;
 
-        // 新增：课程表
+        // 课程表
         conn.execute(
             r#"
             CREATE TABLE IF NOT EXISTS courses (
@@ -307,7 +308,7 @@ impl Database {
             [],
         )?;
 
-        // 新增：课程与权限组关联表
+        // 课程与权限组关联表
         conn.execute(
             r#"
             CREATE TABLE IF NOT EXISTS course_permission_groups (
@@ -321,7 +322,7 @@ impl Database {
             [],
         )?;
 
-        // 新增：订单表
+        // 订单表
         conn.execute(
             r#"
             CREATE TABLE IF NOT EXISTS orders (
@@ -2079,7 +2080,8 @@ impl Database {
                 status: row.get(6)?,
                 created_at: row.get(7)?,
                 updated_at: row.get(8)?,
-                remaining_time_seconds: None, // <-- ADD THIS LINE
+                remaining_time_seconds: None,
+                payment_address: None, // <-- 在这里初始化新字段
             })
         })?.collect::<Result<Vec<_>, _>>()?;
         Ok(orders)
@@ -2166,6 +2168,7 @@ impl Database {
                 created_at: row.get(7)?,
                 updated_at: row.get(8)?,
                 remaining_time_seconds: None,
+                payment_address: None,
             })
         }).optional()
     }
@@ -2259,7 +2262,8 @@ impl Database {
                 status: row.get(6)?,
                 created_at: row.get(7)?,
                 updated_at: row.get(8)?,
-                remaining_time_seconds: None, // <-- ADD THIS LINE
+                remaining_time_seconds: None,
+                payment_address: None,
             })
         })?.collect::<Result<Vec<_>, _>>()?;
         Ok(orders)
@@ -2336,6 +2340,26 @@ impl Database {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM permission_groups WHERE id = ?", params![group_id])?;
         Ok(())
+    }
+
+    ///更新课程与权限组的关联
+    pub fn update_course_group_assignments(&self, course_id: i64, group_ids: &[i64]) -> Result<()> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+
+        // 1. Delete old assignments
+        tx.execute("DELETE FROM course_permission_groups WHERE course_id = ?", params![course_id])?;
+
+        // 2. Insert new assignments within a new scope
+        { // <-- Start of new scope
+            let mut stmt = tx.prepare("INSERT OR IGNORE INTO course_permission_groups (course_id, group_id) VALUES (?, ?)")?;
+            for group_id in group_ids {
+                stmt.execute(params![course_id, group_id])?;
+            }
+        } // <-- End of scope; `stmt` is dropped here, releasing the borrow on `tx`
+
+        // Now it's safe to commit the transaction
+        tx.commit()
     }
 
 
@@ -2816,15 +2840,17 @@ pub struct Order {
     pub id: i64,
     pub user_id: i64,
     pub package_id: i64,
-    pub amount: f64, // 原始套餐价格
+    pub amount: f64,
     #[serde(rename = "paymentAmount")]
-    pub payment_amount: f64, // 用户需支付的唯一金额
+    pub payment_amount: f64,
     pub currency: String,
     pub status: String,
     pub created_at: String,
     pub updated_at: String,
     #[serde(rename = "remainingTimeSeconds", skip_serializing_if = "Option::is_none")]
     pub remaining_time_seconds: Option<i64>,
+    #[serde(rename = "paymentAddress", skip_serializing_if = "Option::is_none")]
+    pub payment_address: Option<String>,
 }
 
 // 新增一个用于返回给API的课程结构体，它包含了权限信息

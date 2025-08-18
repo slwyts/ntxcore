@@ -378,3 +378,17 @@ pub async fn delete_course_package(db: web::Data<Database>, path: web::Path<i64>
         Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({"error": e.to_string()})),
     }
 }
+#[put("/courses/{id}/groups", wrap="AdminAuth")]
+pub async fn update_course_groups(
+    db: web::Data<Database>,
+    path: web::Path<i64>,
+    req: web::Json<Vec<i64>>, // 期望接收一个包含所有新 group ID 的数组
+) -> impl Responder {
+    let course_id = path.into_inner();
+    let group_ids = req.into_inner();
+
+    match db.update_course_group_assignments(course_id, &group_ids) {
+        Ok(_) => HttpResponse::Ok().json(serde_json::json!({"message": "课程权限组关联更新成功"})),
+        Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({"error": e.to_string()})),
+    }
+}
