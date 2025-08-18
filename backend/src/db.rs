@@ -249,7 +249,7 @@ impl Database {
             CREATE TABLE IF NOT EXISTS permission_groups (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL UNIQUE,
-                description TEXT, -- <-- 新增这一行
+                description TEXT,
                 created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
             )
             "#,
@@ -1910,11 +1910,11 @@ impl Database {
     // --- 权限组 (PermissionGroups) 操作 ---
 
     /// 创建一个新的权限组
-    pub fn create_permission_group(&self, name: &str) -> Result<i64> {
+    pub fn create_permission_group(&self, name: &str, description: Option<&str>) -> Result<i64> { // <-- 修改函数签名
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO permission_groups (name) VALUES (?)",
-            params![name],
+            "INSERT INTO permission_groups (name, description) VALUES (?, ?)",
+            params![name, description],
         )?;
         Ok(conn.last_insert_rowid())
     }
@@ -1922,12 +1922,13 @@ impl Database {
     /// 获取所有权限组
     pub fn get_all_permission_groups(&self) -> Result<Vec<PermissionGroup>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare("SELECT id, name, created_at FROM permission_groups")?;
+        let mut stmt = conn.prepare("SELECT id, name, description, created_at FROM permission_groups")?;
         let groups = stmt.query_map([], |row| {
             Ok(PermissionGroup {
                 id: row.get(0)?,
                 name: row.get(1)?,
-                created_at: row.get(2)?,
+                description: row.get(2)?,
+                created_at: row.get(3)?,
             })
         })?.collect::<Result<Vec<_>, _>>()?;
         Ok(groups)
@@ -2326,11 +2327,11 @@ impl Database {
     // --- 权限组管理 (Permission Group Management) ---
 
     ///更新权限组名称
-    pub fn update_permission_group(&self, group_id: i64, name: &str) -> Result<()> {
+    pub fn update_permission_group(&self, group_id: i64, name: &str, description: Option<&str>) -> Result<()> { // <-- 修改函数签名
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "UPDATE permission_groups SET name = ? WHERE id = ?",
-            params![name, group_id],
+            "UPDATE permission_groups SET name = ?, description = ? WHERE id = ?",
+            params![name, description, group_id],
         )?;
         Ok(())
     }
@@ -2796,6 +2797,7 @@ pub struct KolInfo {
 pub struct PermissionGroup {
     pub id: i64,
     pub name: String,
+    pub description: Option<String>,
     pub created_at: String,
 }
 

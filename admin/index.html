@@ -985,6 +985,7 @@
                             <tr>
                                 <th>ID</th>
                                 <th>名称</th>
+                                <th>描述</th>
                                 <th>创建时间</th>
                                 <th>操作</th>
                             </tr>
@@ -1240,6 +1241,10 @@
                             <label for="permission-group-name">权限组名称:</label>
                             <input type="text" id="permission-group-name" required>
                         </div>
+                        <div class="form-group">
+                            <label for="permission-group-description">描述:</label>
+                            <textarea id="permission-group-description" rows="3"></textarea>
+                        </div>
                         <div class="form-actions">
                             <button type="submit" class="btn btn-primary">保存</button>
                         </div>
@@ -1324,8 +1329,8 @@
     <script>
         // API Base URL
         //const API_BASE_URL = 'https://api.ntxdao.com/api'; // Production API URL
-        const API_BASE_URL = 'http://localhost:3000/api'; // Local development API URL
-        //const API_BASE_URL = 'https://api.devnet.ntxdao.com/api'; // dev API URL
+        //const API_BASE_URL = 'http://localhost:3000/api'; // Local development API URL
+        const API_BASE_URL = 'https://api.devnet.ntxdao.com/api'; // dev API URL
 
         // Pagination settings
         const ITEMS_PER_PAGE = 10;
@@ -1341,7 +1346,7 @@
         let allCommissions = [];
         let allWithdrawalOrders = [];
         let allDaoAuctions = [];
-        let allKols = []; // 新增：用于存储KOL列表
+        let allKols = []; // 用于存储KOL列表
 
         // 放置在 let allKols = []; 之后
         let allPermissionGroups = [];
@@ -2584,10 +2589,9 @@
                 row.innerHTML = `
                     <td>${group.id}</td>
                     <td>${escapeHtml(group.name)}</td>
-                    <td>${formatDateTime(group.created_at)}</td>
+                    <td>${escapeHtml(group.description || '')}</td> <td>${formatDateTime(group.created_at)}</td>
                     <td>
-                        <button class="btn btn-primary btn-sm" onclick="openPermissionGroupModal(${group.id}, '${escapeHtml(group.name)}')">编辑</button>
-                        <button class="btn btn-danger btn-sm" onclick="deletePermissionGroup(${group.id})">删除</button>
+                        <button class="btn btn-primary btn-sm" onclick="openPermissionGroupModal(${group.id}, '${escapeHtml(group.name)}', '${escapeHtml(group.description || '')}')">编辑</button> <button class="btn btn-danger btn-sm" onclick="deletePermissionGroup(${group.id})">删除</button>
                     </td>
                 `;
             });
@@ -2601,9 +2605,10 @@
             }
         }
 
-        function openPermissionGroupModal(id = null, name = '') {
+        function openPermissionGroupModal(id = null, name = '', description = '') {
             document.getElementById('permission-group-id').value = id || '';
             document.getElementById('permission-group-name').value = name;
+            document.getElementById('permission-group-description').value = description;
             document.getElementById('permission-group-modal-title').textContent = id ? '编辑权限组' : '创建新权限组';
             document.getElementById('permission-group-modal').style.display = 'flex';
         }
@@ -2983,7 +2988,7 @@
             });
             
 
-                    // 新增：为“用户绑定查询”的查询按钮添加事件监听
+                    // 为“用户绑定查询”的查询按钮添加事件监听
         document.getElementById('search-bindings-btn').addEventListener('click', async () => {
             const exchangeId = document.getElementById('binding-exchange-filter').value;
             const tbody = document.getElementById('binding-list-body');
@@ -3000,12 +3005,11 @@
             renderBindingList(bindings); // 使用新函数渲染结果
         });
 
-        // 新增：KOL创建按钮
+        // KOL创建按钮
         document.getElementById('create-kol-btn').addEventListener('click', () => {
             openKolModal();
         });
         
-        // 放置在 document.getElementById('create-kol-btn').addEventListener('click', ...); 之后
 
 // --- 课程与支付管理事件监听 ---
 document.getElementById('filter-course-orders-btn').addEventListener('click', loadCourseOrders);
@@ -3016,7 +3020,10 @@ document.getElementById('create-course-btn').addEventListener('click', () => ope
 document.getElementById('permission-group-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const id = document.getElementById('permission-group-id').value;
-    const payload = { name: document.getElementById('permission-group-name').value };
+    const payload = { 
+        name: document.getElementById('permission-group-name').value,
+        description: document.getElementById('permission-group-description').value
+    };
     const endpoint = id ? `/permission_groups/${id}` : '/permission_groups';
     const method = id ? 'PUT' : 'POST';
     

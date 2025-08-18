@@ -39,6 +39,7 @@ fn extract_link_and_update_text(text: &mut String) -> Option<String> {
 #[derive(Deserialize)]
 pub struct CreatePermissionGroupRequest {
     pub name: String,
+    pub description: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -68,6 +69,7 @@ pub struct AssignCourseToGroupRequest {
 #[derive(Deserialize)]
 pub struct UpdatePermissionGroupRequest {
     pub name: String,
+    pub description: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -108,7 +110,7 @@ pub async fn create_permission_group(
     db: web::Data<Database>,
     req: web::Json<CreatePermissionGroupRequest>,
 ) -> impl Responder {
-    match db.create_permission_group(&req.name) {
+    match db.create_permission_group(&req.name, req.description.as_deref()) {
         Ok(group_id) => HttpResponse::Ok().json(serde_json::json!({
             "message": "权限组创建成功",
             "id": group_id
@@ -302,7 +304,7 @@ pub async fn get_all_permission_groups_admin(db: web::Data<Database>) -> impl Re
 #[put("/permission_groups/{id}", wrap="AdminAuth")]
 pub async fn update_permission_group(db: web::Data<Database>, path: web::Path<i64>, req: web::Json<UpdatePermissionGroupRequest>) -> impl Responder {
     let group_id = path.into_inner();
-    match db.update_permission_group(group_id, &req.name) {
+    match db.update_permission_group(group_id, &req.name, req.description.as_deref()) {
         Ok(_) => HttpResponse::Ok().json(serde_json::json!({"message": "权限组更新成功"})),
         Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({"error": e.to_string()})),
     }
