@@ -214,7 +214,7 @@ pub async fn login(
     }
     // 生成JWT
     let expiration = Utc::now()
-        .checked_add_signed(Duration::hours(128))
+        .checked_add_signed(Duration::hours(256))
         .expect("有效时间戳")
         .timestamp() as usize;
 

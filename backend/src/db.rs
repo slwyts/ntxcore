@@ -35,6 +35,8 @@ impl Database {
     pub fn new(db_file: &str) -> Result<Self> {
         let file_exists = Path::new(db_file).exists();
         let conn = Connection::open(db_file)?;
+        // 外键约束开启
+        conn.execute("PRAGMA foreign_keys = ON;", [])?;
 
         if !file_exists {
             println!("数据库文件不存在，正在初始化...");
@@ -1970,12 +1972,10 @@ impl Database {
         let mut conn = self.conn.lock().unwrap();
         let tx = conn.transaction()?;
 
-        // 如果 image URL 存在且不为空，则添加 <...> 标记，否则直接使用 description
         let final_description = image.filter(|s| !s.is_empty())
                                      .map(|img| format!("<{}>{}", img, description))
                                      .unwrap_or_else(|| description.to_string());
-        
-        // 如果 link URL 存在且不为空，则添加 <...> 标记，否则直接使用 content
+
         let final_content = link.filter(|s| !s.is_empty())
                                 .map(|l| format!("<{}>{}", l, content))
                                 .unwrap_or_else(|| content.to_string());
@@ -1988,11 +1988,12 @@ impl Database {
 
         // 当课程类型为 "broker" 时，创建并关联专属权限组
         if course_type == "broker" {
-            let random_id = utils::generate_random_id(); // 使用 utils 生成随机ID
+            let random_id = utils::generate_random_id();
             let group_name = format!("_broker_{}", random_id);
+            let group_description = format!("Broker-specific group:{}", name);
             tx.execute(
                 "INSERT INTO permission_groups (name, description) VALUES (?, ?)",
-                params![&group_name, Some("Broker-specific group")],
+                params![&group_name, Some(group_description)],
             )?;
             let group_id = tx.last_insert_rowid();
 
@@ -2345,46 +2346,40 @@ impl Database {
         let mut conn = self.conn.lock().unwrap();
         let tx = conn.transaction()?;
 
-        // 1. 查询课程类型，以判断是否为 broker 课程
-        let course_type: Option<String> = tx.query_row(
-            "SELECT course_type FROM courses WHERE id = ?",
-            params![course_id],
-            |row| row.get(0),
-        ).optional()?;
+        let group_ids_to_check: Vec<i64> = {
+            let mut stmt = tx.prepare("SELECT group_id FROM course_permission_groups WHERE course_id = ?")?;
+            let rows = stmt.query_map(params![course_id], |row| row.get(0))?;
+            rows.collect::<Result<Vec<i64>, _>>()?
+        };
 
-        // 2. 如果是 broker 课程，则删除其伴生的权限组
-        if let Some(c_type) = course_type {
-            if c_type == "broker" {
-                // --- THIS IS THE CORRECTED PART ---
-                // 找出与该课程关联的所有权限组 ID
-                let mut stmt = tx.prepare("SELECT group_id FROM course_permission_groups WHERE course_id = ?")?;
-                let group_ids = stmt.query_map(params![course_id], |row| row.get(0))?
-                    .collect::<Result<Vec<i64>, _>>()?;
-                // --- END OF CORRECTION ---
+        // 步骤 2: 首先，删除课程与所有权限组的关联关系
+        tx.execute("DELETE FROM course_permission_groups WHERE course_id = ?", params![course_id])?;
 
-                // 遍历这些权限组，如果名称符合 _broker_ 格式，就删除它
-                for group_id in group_ids {
-                    let group_name: Option<String> = tx.query_row(
-                        "SELECT name FROM permission_groups WHERE id = ?",
-                        params![group_id],
-                        |row| row.get(0),
-                    ).optional()?;
+        // 步骤 3: 删除课程本身
+        tx.execute("DELETE FROM courses WHERE id = ?", params![course_id])?;
 
-                    if let Some(name) = group_name {
-                        if name.starts_with("_broker_") {
-                            tx.execute("DELETE FROM permission_groups WHERE id = ?", params![group_id])?;
-                        }
-                    }
+        // 步骤 4: 遍历之前找到的权限组ID，清理 broker 专属的权限组
+        for group_id in group_ids_to_check {
+            // 查询权限组的名称
+            let group_name: Option<String> = tx.query_row(
+                "SELECT name FROM permission_groups WHERE id = ?",
+                params![group_id],
+                |row| row.get(0),
+            ).optional()?;
+
+            if let Some(name) = group_name {
+                // 关键检查：确认是 broker 专属组
+                if name.starts_with("_broker_") {
+                    // 安全地删除这个权限组
+                    tx.execute("DELETE FROM permission_groups WHERE id = ?", params![group_id])?;
                 }
             }
         }
 
-        // 3. 最后删除课程本身
-        tx.execute("DELETE FROM courses WHERE id = ?", params![course_id])?;
-
+        // 现在可以安全地提交事务，因为所有对 tx 的临时借用都已结束
         tx.commit()
     }
-    
+
 
     // --- 权限组管理 (Permission Group Management) ---
 
