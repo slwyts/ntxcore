@@ -7,6 +7,7 @@ use chrono::{Utc};
 use rusqlite::ffi;
 use serde::Serialize;
 use regex::Regex;
+use crate::utils;
 
 fn extract_link_and_update_text(text: &mut String) -> Option<String> {
     let re = Regex::new(r"^<([^>]+)>(.*)").unwrap();
@@ -1966,7 +1967,9 @@ impl Database {
 
     /// 创建一个新课程
     pub fn create_course(&self, course_type: &str, name: &str, description: &str, content: &str, image: Option<&str>, link: Option<&str>) -> Result<i64> {
-        let conn = self.conn.lock().unwrap();
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+
         // 如果 image URL 存在且不为空，则添加 <...> 标记，否则直接使用 description
         let final_description = image.filter(|s| !s.is_empty())
                                      .map(|img| format!("<{}>{}", img, description))
@@ -1977,12 +1980,32 @@ impl Database {
                                 .map(|l| format!("<{}>{}", l, content))
                                 .unwrap_or_else(|| content.to_string());
 
-        conn.execute(
+        tx.execute(
             "INSERT INTO courses (course_type, name, description, content) VALUES (?, ?, ?, ?)",
             params![course_type, name, final_description, final_content],
         )?;
-        Ok(conn.last_insert_rowid())
+        let course_id = tx.last_insert_rowid();
+
+        // 当课程类型为 "broker" 时，创建并关联专属权限组
+        if course_type == "broker" {
+            let random_id = utils::generate_random_id(); // 使用 utils 生成随机ID
+            let group_name = format!("_broker_{}", random_id);
+            tx.execute(
+                "INSERT INTO permission_groups (name, description) VALUES (?, ?)",
+                params![&group_name, Some("Broker-specific group")],
+            )?;
+            let group_id = tx.last_insert_rowid();
+
+            tx.execute(
+                "INSERT INTO course_permission_groups (course_id, group_id) VALUES (?, ?)",
+                params![course_id, group_id],
+            )?;
+        }
+
+        tx.commit()?;
+        Ok(course_id)
     }
+
 
 
     /// 将课程分配给一个权限组
@@ -2319,10 +2342,49 @@ impl Database {
 
     ///删除课程
     pub fn delete_course(&self, course_id: i64) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute("DELETE FROM courses WHERE id = ?", params![course_id])?;
-        Ok(())
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+
+        // 1. 查询课程类型，以判断是否为 broker 课程
+        let course_type: Option<String> = tx.query_row(
+            "SELECT course_type FROM courses WHERE id = ?",
+            params![course_id],
+            |row| row.get(0),
+        ).optional()?;
+
+        // 2. 如果是 broker 课程，则删除其伴生的权限组
+        if let Some(c_type) = course_type {
+            if c_type == "broker" {
+                // --- THIS IS THE CORRECTED PART ---
+                // 找出与该课程关联的所有权限组 ID
+                let mut stmt = tx.prepare("SELECT group_id FROM course_permission_groups WHERE course_id = ?")?;
+                let group_ids = stmt.query_map(params![course_id], |row| row.get(0))?
+                    .collect::<Result<Vec<i64>, _>>()?;
+                // --- END OF CORRECTION ---
+
+                // 遍历这些权限组，如果名称符合 _broker_ 格式，就删除它
+                for group_id in group_ids {
+                    let group_name: Option<String> = tx.query_row(
+                        "SELECT name FROM permission_groups WHERE id = ?",
+                        params![group_id],
+                        |row| row.get(0),
+                    ).optional()?;
+
+                    if let Some(name) = group_name {
+                        if name.starts_with("_broker_") {
+                            tx.execute("DELETE FROM permission_groups WHERE id = ?", params![group_id])?;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. 最后删除课程本身
+        tx.execute("DELETE FROM courses WHERE id = ?", params![course_id])?;
+
+        tx.commit()
     }
+    
 
     // --- 权限组管理 (Permission Group Management) ---
 

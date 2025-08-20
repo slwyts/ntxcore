@@ -170,14 +170,23 @@ pub async fn assign_course_to_group(
 pub async fn get_all_groups_and_packages(db: web::Data<Database>) -> impl Responder {
     match db.get_all_permission_groups() {
         Ok(groups) => {
-            let mut result = vec![];
-            for group in groups {
+            let result: Vec<_> = groups.into_iter().map(|group| {
                 let packages = db.get_packages_for_group(group.id).unwrap_or_default();
-                result.push(serde_json::json!({
-                    "group": group,
+                // 关键逻辑：如果 id 为 1 或是 broker 专属组，则 hidden 为 true
+                let hidden = group.id == 1 || group.name.starts_with("_broker_");
+                
+                serde_json::json!({
+                    "group": {
+                        "id": group.id,
+                        "name": group.name,
+                        "description": group.description,
+                        "created_at": group.created_at,
+                        "hidden": hidden,
+                    },
                     "packages": packages,
-                }));
-            }
+                })
+            }).collect();
+
             HttpResponse::Ok().json(result)
         },
         Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({"error": e.to_string()})),
@@ -345,6 +354,7 @@ pub async fn delete_course(db: web::Data<Database>, path: web::Path<i64>) -> imp
         Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({"error": e.to_string()})),
     }
 }
+
 #[get("/courses/{id}/groups", wrap="AdminAuth")]
 pub async fn get_course_groups(db: web::Data<Database>, path: web::Path<i64>) -> impl Responder {
     let course_id = path.into_inner();
