@@ -273,8 +273,9 @@ pub async fn get_all_courses_for_user(
                 link: None,
             }
         });
-        // 添加解锁当前课程所需的权限组信息
-        course.required_groups.push(PermissionGroupInfo { id: item.group_id, name: item.group_name });
+        if let (Some(gid), Some(gname)) = (item.group_id, item.group_name) {
+            course.required_groups.push(PermissionGroupInfo { id: gid, name: gname });
+        }
     }
 
     // 5. 最终处理，决定每个课程是否解锁并处理内容

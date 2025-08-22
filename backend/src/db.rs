@@ -2029,8 +2029,8 @@ impl Database {
                 c.id, c.course_type, c.name, c.description, c.content,
                 pg.id, pg.name
             FROM courses c
-            JOIN course_permission_groups cpg ON c.id = cpg.course_id
-            JOIN permission_groups pg ON cpg.group_id = pg.id
+            LEFT JOIN course_permission_groups cpg ON c.id = cpg.course_id
+            LEFT JOIN permission_groups pg ON cpg.group_id = pg.id
             ORDER BY c.id
             "#
         )?;
@@ -2042,8 +2042,8 @@ impl Database {
                 course_name: row.get(2)?,
                 course_description: row.get(3)?,
                 course_content: row.get(4)?,
-                group_id: row.get(5)?,
-                group_name: row.get(6)?,
+                group_id: row.get(5)?, // 直接获取 Option<i64>
+                group_name: row.get(6)?, // 直接获取 Option<String>
             })
         })?;
 
@@ -2938,8 +2938,8 @@ pub struct CourseWithGroup {
     pub course_name: String,
     pub course_description: String,
     pub course_content: String,
-    pub group_id: i64,
-    pub group_name: String,
+    pub group_id: Option<i64>,
+    pub group_name: Option<String>,
 }
 
 // 用于权限组信息的简单结构体
