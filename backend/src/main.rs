@@ -99,10 +99,6 @@ async fn main() -> std::io::Result<()> {
             .app_data(jwt_config.clone())
             .app_data(admin_key_config.clone())
             .service(
-                web::scope("/api")
-                    .service(banner::get_banners)
-            )
-            .service(
                 web::scope("/api/auth")
                     .service(auth::register)
                     .service(auth::login)
@@ -121,6 +117,7 @@ async fn main() -> std::io::Result<()> {
                     .service(mining::get_user_exchanges)
                     .service(mining::bind_exchange)
                     .service(mining::get_mining_leaderboard)
+                    .service(banner::get_banners)
             )
             .service(
                 web::scope("/api/user")
