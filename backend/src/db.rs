@@ -345,6 +345,19 @@ impl Database {
             [],
         )?;
 
+        //banners
+        conn.execute(
+            r#"
+            CREATE TABLE IF NOT EXISTS banners (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                image_url TEXT NOT NULL,
+                link_url TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+            )
+            "#,
+            [],
+        )?;
+
 
 
 
@@ -2516,6 +2529,53 @@ impl Database {
         }
         Ok(())
     }
+
+
+
+// =================================================================================
+    /// 创建一个新的 Banner
+
+    pub fn create_banner(&self, image_url: &str, link_url: &str) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO banners (image_url, link_url) VALUES (?, ?)",
+            params![image_url, link_url],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// 获取所有 Banner
+    pub fn get_all_banners(&self) -> Result<Vec<Banner>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id, image_url, link_url, created_at FROM banners ORDER BY id DESC")?;
+        let banners = stmt.query_map([], |row| {
+            Ok(Banner {
+                id: row.get(0)?,
+                image_url: row.get(1)?,
+                link_url: row.get(2)?,
+                created_at: row.get(3)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(banners)
+    }
+
+    /// 更新一个 Banner
+    pub fn update_banner(&self, id: i64, image_url: &str, link_url: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE banners SET image_url = ?, link_url = ? WHERE id = ?",
+            params![image_url, link_url, id],
+        )?;
+        Ok(())
+    }
+
+    /// 删除一个 Banner
+    pub fn delete_banner(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM banners WHERE id = ?", params![id])?;
+        Ok(())
+    }
+
 }
 
 
@@ -2947,4 +3007,12 @@ pub struct CourseWithGroup {
 pub struct PermissionGroupInfo {
     pub id: i64,
     pub name: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct Banner {
+    pub id: i64,
+    pub image_url: String,
+    pub link_url: String,
+    pub created_at: String,
 }

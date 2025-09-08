@@ -11,6 +11,7 @@ mod tasks;
 mod gntx_sync;
 mod course;
 mod payment;
+mod banner;
 
 use actix_web::{web, App, HttpServer};
 use dotenv::dotenv;
@@ -96,7 +97,11 @@ async fn main() -> std::io::Result<()> {
             .app_data(db_data.clone())
             .app_data(mail_config.clone())
             .app_data(jwt_config.clone())
-            .app_data(admin_key_config.clone()) // 将 AdminKeyConfig 传递给 App
+            .app_data(admin_key_config.clone())
+            .service(
+                web::scope("/api")
+                    .service(banner::get_banners)
+            )
             .service(
                 web::scope("/api/auth")
                     .service(auth::register)
@@ -127,8 +132,8 @@ async fn main() -> std::io::Result<()> {
                     .service(user::get_user_withdrawal_records)
                     .service(user::bind_bsc_address)
                     .service(user::get_current_dao_auction)
-                    .service(user::get_articles) // 获取文章列表
-                    .service(user::get_article_detail) // 获取文章详情
+                    .service(user::get_articles)
+                    .service(user::get_article_detail)
                     .service(user::update_user_nickname)
 
             )
@@ -221,6 +226,11 @@ async fn main() -> std::io::Result<()> {
                     .service(admin::get_user_permissions_admin) // 查看用户权限
                     .service(admin::grant_permission_admin)     // 手动授予权限
                     .service(admin::revoke_permission_admin)    // 手动移除权限
+
+                    .service(banner::create_banner)
+                    .service(banner::get_all_banners_admin)
+                    .service(banner::update_banner)
+                    .service(banner::delete_banner)
             )
             .service(
                 web::scope("/api/system")
