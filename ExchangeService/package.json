@@ -2,10 +2,10 @@
   "name": "exchange-service",
   "version": "1.0.0",
   "description": "A modular microservice for syncing commission data from multiple exchanges.",
-  "main": "index.js",
+  "main": "src/index.js",
   "scripts": {
-    "start": "cross-env MODE=normal node index.js",
-    "test": "cross-env MODE=test node index.js"
+    "start": "cross-env MODE=normal node src/index.js",
+    "test": "cross-env MODE=test node src/index.js"
   },
   "author": "PixelYuki@slwyts",
   "license": "MIT",
