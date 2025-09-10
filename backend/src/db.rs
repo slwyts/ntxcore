@@ -1064,24 +1064,37 @@ impl Database {
         Ok(leaderboard)
     }
 
-    // 获取用户邀请的下级用户
-    pub fn get_my_invited_users(&self, user_invite_code: &str) -> Result<Vec<InvitedUserInfo>> {
+    // 使用递归查询获取所有社区用户（直接和间接邀请）
+    pub fn get_community_users(&self, user_email: &str) -> Result<Vec<CommunityUserInfo>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             r#"
-            SELECT id, email, nickname FROM users WHERE inviteBy = (SELECT email FROM users WHERE inviteCode = ?)
-            "#
+            WITH RECURSIVE InvitedHierarchy (id, email, nickname, inviteBy, level) AS (
+                -- 基础查询：直接邀请的用户
+                SELECT id, email, nickname, inviteBy, 1
+                FROM users
+                WHERE inviteBy = ?1
+                UNION ALL
+                -- 递归查询：由上一层用户邀请的用户
+                SELECT u.id, u.email, u.nickname, u.inviteBy, ih.level + 1
+                FROM users u
+                JOIN InvitedHierarchy ih ON u.inviteBy = ih.email
+            )
+            SELECT id, email, nickname, level FROM InvitedHierarchy;
+            "#,
         )?;
 
-        let invited_users = stmt.query_map(params![user_invite_code], |row| {
-            Ok(InvitedUserInfo {
+        let community_users = stmt.query_map(params![user_email], |row| {
+            let level: i64 = row.get(3)?;
+            Ok(CommunityUserInfo {
                 id: row.get(0)?,
                 email: row.get(1)?,
                 nickname: row.get(2)?,
+                is_direct_invite: level == 1,
             })
         })?.collect::<Result<Vec<_>, _>>()?;
 
-        Ok(invited_users)
+        Ok(community_users)
     }
 
     // 获取佣金发放记录

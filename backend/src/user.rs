@@ -83,6 +83,15 @@ pub struct CurrentDaoAuctionResponse {
     pub admin_bsc_address: Option<String>,
 }
 
+#[derive(Serialize)]
+pub struct MyTeamsResponse {
+    #[serde(rename = "communityUserCount")]
+    pub community_user_count: usize,
+    #[serde(rename = "directInviteCount")]
+    pub direct_invite_count: usize,
+    #[serde(rename = "communityUsers")]
+    pub community_users: Vec<crate::db::CommunityUserInfo>,
+}
 
 pub fn get_user_id_from_token(req: &HttpRequest, jwt_config: &JwtConfig) -> Result<i64, HttpResponse> {
     let auth_header = req.headers().get("Authorization");
@@ -435,9 +444,9 @@ pub async fn get_my_teams(
     };
     println!("API Info: /api/user/my_teams - 用户ID {} 请求我的团队信息。", user_id);
 
-    // 获取用户自己的邀请码
-    let my_invite_code = match db.get_user_info(user_id) {
-        Ok(Some(user_info)) => user_info.my_invite_code,
+    // 获取用户自己的邮箱，用于查询他邀请的用户
+    let user_email = match db.get_user_info(user_id) {
+        Ok(Some(user_info)) => user_info.email,
         Ok(None) => {
             eprintln!("API Error: /api/user/my_teams - 未找到用户ID {}。", user_id);
             return HttpResponse::NotFound().json(
@@ -450,10 +459,19 @@ pub async fn get_my_teams(
         },
     };
 
-    match db.get_my_invited_users(&my_invite_code) {
-        Ok(invited_users) => {
-            println!("API Success: /api/user/my_teams - 用户 {} 已获取 {} 个团队成员。", user_id, invited_users.len());
-            HttpResponse::Ok().json(invited_users)
+    match db.get_community_users(&user_email) {
+        Ok(community_users) => {
+            let community_user_count = community_users.len();
+            let direct_invite_count = community_users.iter().filter(|u| u.is_direct_invite).count();
+
+            let response = MyTeamsResponse {
+                community_user_count,
+                direct_invite_count,
+                community_users,
+            };
+
+            println!("API Success: /api/user/my_teams - 用户 {} 已获取 {} 社区成员 ({} 直接邀请)。", user_id, community_user_count, direct_invite_count);
+            HttpResponse::Ok().json(response)
         },
         Err(e) => {
             eprintln!("API Error: /api/user/my_teams - 获取用户 {} 团队信息失败: {:?}", user_id, e);
