@@ -3016,3 +3016,12 @@ pub struct Banner {
     pub link_url: String,
     pub created_at: String,
 }
+
+#[derive(Debug, Serialize)]
+pub struct CommunityUserInfo {
+    pub id: i64,
+    pub email: String,
+    pub nickname: String,
+    #[serde(rename = "isDirectInvite")]
+    pub is_direct_invite: bool,
+}

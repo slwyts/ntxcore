@@ -38,8 +38,8 @@ async function fetchAndProcessCommissions() {
     let startTime;
 
     if (IS_TEST_MODE) {
-        startTime = nowTimestamp - (7 * 24 * 60 * 60 * 1000);
-        logger.info(`[TEST MODE] Fetching data for the last 7 days.`);
+        startTime = nowTimestamp - (1 * 24 * 60 * 60 * 1000);
+        logger.info(`[TEST MODE] Fetching data for the last 1 day.`);
     } else {
         startTime = stateService.getLastSyncTimestamp(EXCHANGE_IDENTIFIER);
     }
@@ -71,9 +71,9 @@ async function fetchAndProcessCommissions() {
                 params: params
             });
 
-            if (IS_TEST_MODE) {
-                logger.info(`[${EXCHANGE_NAME} - ${typeInfo.name}] Raw API Response:\n${JSON.stringify(response, null, 2)}`);
-            }
+            // if (IS_TEST_MODE) {
+            //     logger.info(`[${EXCHANGE_NAME} - ${typeInfo.name}] Raw API Response:\n${JSON.stringify(response, null, 2)}`);
+            // }
 
             if (response && response.rc === 0 && response.mc === "SUCCESS") {
                 const items = response.result.items || [];
@@ -82,8 +82,6 @@ async function fetchAndProcessCommissions() {
                 const parsedEntries = items.map(item => {
                     const commission = parseFloat(item.commissionAmount || 0);
                     let rebateRate = 0;
-                    
-                    // 这里的逻辑就是您期望的“自动识别”
                     if (item.type === 1) { // 现货
                         rebateRate = parseFloat(item.spotRebateRate || 0);
                     } else if (item.type === 2) { // 合约

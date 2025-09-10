@@ -26,7 +26,7 @@ async function fetchAndProcessCommissions() {
     // --- 核心修改 ---
     if (IS_TEST_MODE) {
         // 在测试模式下，强制将开始时间设置为1天前
-        startTime = nowTimestamp - (4 * 24 * 60 * 60 * 1000);
+        startTime = nowTimestamp - (2 * 24 * 60 * 60 * 1000);
         logger.info(`[TEST MODE] Fetching data for the last 1 day.`);
     } else {
         // 在正常模式下，使用 stateService 来获取上次同步的时间
@@ -43,15 +43,15 @@ async function fetchAndProcessCommissions() {
         const params = {
             startTime: startTime.toString(),
             endTime: nowTimestamp.toString(),
-            limit: 100000
+            limit: 1000
         };
 
         logger.info(`[${EXCHANGE_NAME}] Fetching data from ${new Date(startTime).toISOString()} to ${new Date(nowTimestamp).toISOString()}`);
         const response = await bitgetApi.get(endpoint, params);
 
-        if (IS_TEST_MODE) {
-            logger.info(`[${EXCHANGE_NAME}] Raw API Response:\n${JSON.stringify(response, null, 2)}`);
-        }
+        // if (IS_TEST_MODE) {
+        //     logger.info(`[${EXCHANGE_NAME}] Raw API Response:\n${JSON.stringify(response, null, 2)}`);
+        // }
 
         if (response.code === "00000") {
             const commissionList = response.data.commissionList || [];
