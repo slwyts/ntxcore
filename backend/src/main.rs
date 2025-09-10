@@ -158,6 +158,7 @@ async fn main() -> std::io::Result<()> {
                     .service(admin::get_user_bound_exchanges)
                     .service(admin::get_all_exchanges_admin) // 获取所有交易所
                     .service(admin::add_daily_trade_data)
+                    .service(admin::get_manual_trade_data_log) // 获取添加交易数据日志
                     .service(admin::get_daily_trades_admin) // 获取指定日期的所有用户交易记录
                     .service(admin::create_exchange)
                     .service(admin::update_exchange)

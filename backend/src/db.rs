@@ -358,6 +358,28 @@ impl Database {
             [],
         )?;
 
+        // 添加交易记录日志表
+        conn.execute(
+            r#"
+            CREATE TABLE IF NOT EXISTS manual_trade_data_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                admin_user_id INTEGER NOT NULL,
+                admin_user_email TEXT NOT NULL,
+                target_user_id INTEGER NOT NULL,
+                target_user_email TEXT NOT NULL,
+                exchange_id INTEGER NOT NULL,
+                exchange_name TEXT NOT NULL,
+                trade_volume_usdt REAL NOT NULL,
+                fee_usdt REAL NOT NULL,
+                trade_date TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+                FOREIGN KEY (admin_user_id) REFERENCES users(id),
+                FOREIGN KEY (target_user_id) REFERENCES users(id),
+                FOREIGN KEY (exchange_id) REFERENCES exchanges(id)
+            )
+            "#,
+            [],
+        )?;
 
 
 
@@ -2589,6 +2611,72 @@ impl Database {
         Ok(())
     }
 
+    // 记录手动添加交易数据日志
+    pub fn log_manual_trade_data_add(
+        &self,
+        admin_user_id: i64,
+        admin_user_email: &str,
+        target_user_id: i64,
+        target_user_email: &str,
+        exchange_id: i64,
+        exchange_name: &str,
+        trade_volume_usdt: f64,
+        fee_usdt: f64,
+        trade_date: &str,
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            r#"
+            INSERT INTO manual_trade_data_log (
+                admin_user_id, admin_user_email, target_user_id, target_user_email,
+                exchange_id, exchange_name, trade_volume_usdt, fee_usdt, trade_date
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+            params![
+                admin_user_id,
+                admin_user_email,
+                target_user_id,
+                target_user_email,
+                exchange_id,
+                exchange_name,
+                trade_volume_usdt,
+                fee_usdt,
+                trade_date
+            ],
+        )?;
+        Ok(())
+    }
+
+    // 获取手动添加交易数据日志
+    pub fn get_manual_trade_data_log(&self) -> Result<Vec<ManualTradeDataLog>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT
+                id, admin_user_id, admin_user_email, target_user_id, target_user_email,
+                exchange_id, exchange_name, trade_volume_usdt, fee_usdt, trade_date, created_at
+            FROM manual_trade_data_log
+            ORDER BY created_at DESC
+            "#,
+        )?;
+        let logs = stmt.query_map([], |row| {
+            Ok(ManualTradeDataLog {
+                id: row.get(0)?,
+                admin_user_id: row.get(1)?,
+                admin_user_email: row.get(2)?,
+                target_user_id: row.get(3)?,
+                target_user_email: row.get(4)?,
+                exchange_id: row.get(5)?,
+                exchange_name: row.get(6)?,
+                trade_volume_usdt: row.get(7)?,
+                fee_usdt: row.get(8)?,
+                trade_date: row.get(9)?,
+                created_at: row.get(10)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(logs)
+    }
+
 }
 
 
@@ -3037,4 +3125,19 @@ pub struct CommunityUserInfo {
     pub nickname: String,
     #[serde(rename = "isDirectInvite")]
     pub is_direct_invite: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ManualTradeDataLog {
+    pub id: i64,
+    pub admin_user_id: i64,
+    pub admin_user_email: String,
+    pub target_user_id: i64,
+    pub target_user_email: String,
+    pub exchange_id: i64,
+    pub exchange_name: String,
+    pub trade_volume_usdt: f64,
+    pub fee_usdt: f64,
+    pub trade_date: String,
+    pub created_at: String,
 }

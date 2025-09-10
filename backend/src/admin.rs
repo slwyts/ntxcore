@@ -1,13 +1,13 @@
 // src/admin.rs
-use actix_web::{get, post, delete, web, HttpResponse, Responder,put}; 
+use actix_web::{get, post, delete, web, put, HttpResponse, HttpRequest, Responder}; 
 use serde::{Deserialize, Serialize};
-use crate::db::Database;
-use crate::utils::{is_valid_date, get_current_utc_time_string, is_valid_evm_address, is_valid_email, is_valid_password, hash_password, generate_invite_code}; // 引入更多 utils 函数
+use crate::db::{Database, UserGNTXInfo};
+use crate::utils::{is_valid_date, get_current_utc_time_string, is_valid_evm_address, is_valid_email, is_valid_password, hash_password, generate_invite_code};
 use crate::course::{GrantPermissionRequest, RevokePermissionRequest};
-
+use crate::user::get_user_id_from_token;
+use crate::JwtConfig;
 // gntx
 // GNTX 数据库操作底层函数，供 gntx_sync 调用
-use crate::db::UserGNTXInfo;
 
 /// 获取所有用户 GNTX 信息（底层函数，非 handler）
 pub fn db_get_all_user_gntx_info(db: &Database) -> Result<Vec<UserGNTXInfo>, anyhow::Error> {
@@ -506,98 +506,78 @@ pub async fn delete_exchange(
 #[post("/add_daily_trade_data")]
 pub async fn add_daily_trade_data(
     db: web::Data<Database>,
+    jwt_config: web::Data<JwtConfig>,
+    http_req: HttpRequest,
     req: web::Json<AddDailyTradeDataRequest>,
 ) -> impl Responder {
-    // 1. 输入验证：必须提供 user_id 或 exchange_uid
+    // 从 Token 中获取操作员（管理员）的 ID
+    let admin_id = match get_user_id_from_token(&http_req, &jwt_config) {
+        Ok(id) => id,
+        Err(resp) => return resp,
+    };
+
+    // 获取操作员的邮箱
+    let admin_email = match db.get_user_email_by_id(admin_id) {
+        Ok(Some(email)) => email,
+        _ => return HttpResponse::InternalServerError().json(serde_json::json!({"error": "无法获取管理员邮箱"})),
+    };
+
     if req.user_id.is_none() && req.exchange_uid.is_none() {
-        eprintln!("API Error: /api/admin/add_daily_trade_data - 必须提供 user_id 或 exchange_uid。");
-        return HttpResponse::BadRequest().json(
-            serde_json::json!({"error": "必须提供 user_id 或 exchange_uid"})
-        );
+        return HttpResponse::BadRequest().json(serde_json::json!({"error": "必须提供 user_id 或 exchange_uid"}));
     }
-
-    // 验证日期格式
     if !is_valid_date(&req.trade_date) {
-        eprintln!("API Error: /api/admin/add_daily_trade_data - 无效的日期格式: {}", req.trade_date);
-        return HttpResponse::BadRequest().json(
-            serde_json::json!({"error": "无效的日期格式，应为YYYY-MM-DD"})
-        );
+        return HttpResponse::BadRequest().json(serde_json::json!({"error": "无效的日期格式，应为YYYY-MM-DD"}));
     }
 
-    // 2. 确定用户 ID
     let user_id = match req.user_id {
         Some(id) => id,
         None => {
-            // 如果 user_id 不存在，则 exchange_uid 必须存在
-            let exchange_uid = req.exchange_uid.as_ref().unwrap(); // 因上面的验证，这里是安全的
+            let exchange_uid = req.exchange_uid.as_ref().unwrap();
             match db.get_user_id_by_exchange_uid(req.exchange_id, exchange_uid) {
-                Ok(Some(id)) => {
-                    println!("API Info: /api/admin/add_daily_trade_data - 通过 Exchange UID '{}' 和 Exchange ID {} 查找到 User ID {}。", exchange_uid, req.exchange_id, id);
-                    id
-                },
-                Ok(None) => {
-                    eprintln!("API Error: /api/admin/add_daily_trade_data - 未找到与 Exchange UID '{}' 和 Exchange ID {} 绑定的用户。", exchange_uid, req.exchange_id);
-                    return HttpResponse::NotFound().json(
-                        serde_json::json!({"error": "未找到与提供的 exchange_uid 和 exchange_id 绑定的用户"})
-                    );
-                },
-                Err(e) => {
-                    eprintln!("API Error: /api/admin/add_daily_trade_data - 通过UID查询用户ID失败: {:?}", e);
-                    return HttpResponse::InternalServerError().json(
-                        serde_json::json!({"error": "数据库查询失败"})
-                    );
-                }
+                Ok(Some(id)) => id,
+                Ok(None) => return HttpResponse::NotFound().json(serde_json::json!({"error": "未找到与提供的 exchange_uid 和 exchange_id 绑定的用户"})),
+                Err(_) => return HttpResponse::InternalServerError().json(serde_json::json!({"error": "数据库查询失败"})),
             }
         }
     };
     
-    println!("API Info: /api/admin/add_daily_trade_data - 正在为用户 {} 添加交易数据。", user_id);
-
-    // 3. 获取用户和交易所的附加信息 (复用现有逻辑)
     let user_email = match db.get_user_email_by_id(user_id) {
         Ok(Some(email)) => email,
-        Ok(None) => {
-            eprintln!("API Error: /api/admin/add_daily_trade_data - 未找到用户ID {}。", user_id);
-            return HttpResponse::BadRequest().json(
-                serde_json::json!({"error": format!("用户ID {} 不存在", user_id)})
-            );
-        },
-        Err(e) => {
-            eprintln!("API Error: /api/admin/add_daily_trade_data - 获取用户 {} 的邮箱失败: {:?}", user_id, e);
-            return HttpResponse::InternalServerError().json(serde_json::json!({"error": "获取用户邮箱失败"}));
-        },
+        _ => return HttpResponse::BadRequest().json(serde_json::json!({"error": format!("用户ID {} 不存在", user_id)})),
     };
-
     let exchange_name = match db.get_exchange_name_by_id(req.exchange_id) {
         Ok(Some(name)) => name,
-        Ok(None) => {
-            eprintln!("API Error: /api/admin/add_daily_trade_data - 未找到交易所ID {}。", req.exchange_id);
-            return HttpResponse::BadRequest().json(
-                serde_json::json!({"error": "交易所ID不存在"})
-            );
-        },
-        Err(e) => {
-            eprintln!("API Error: /api/admin/add_daily_trade_data - 获取交易所 {} 的名称失败: {:?}", req.exchange_id, e);
-            return HttpResponse::InternalServerError().json(serde_json::json!({"error": "获取交易所名称失败"}));
-        },
+        _ => return HttpResponse::BadRequest().json(serde_json::json!({"error": "交易所ID不存在"})),
     };
 
-    // 4. 调用数据库函数添加或更新交易数据
-    if let Err(e) = db.add_or_update_daily_trade_data(
-        user_id,
-        user_email,
-        req.exchange_id,
-        exchange_name,
-        req.trade_volume_usdt,
-        req.fee_usdt,
-        &req.trade_date,
-    ) {
-        eprintln!("API Error: /api/admin/add_daily_trade_data - 添加用户 {} 的每日交易数据失败: {:?}", user_id, e);
+    // 写入交易数据
+    if let Err(e) = db.add_or_update_daily_trade_data(user_id, user_email.clone(), req.exchange_id, exchange_name.clone(), req.trade_volume_usdt, req.fee_usdt, &req.trade_date) {
+        eprintln!("API Error: /api/admin/add_daily_trade_data - 添加每日交易数据失败: {:?}", e);
         return HttpResponse::InternalServerError().json(serde_json::json!({"error": "添加每日交易数据失败"}));
     }
 
-    println!("API Success: /api/admin/add_daily_trade_data - 成功添加/更新用户 {} 的每日交易数据。", user_id);
+    // 记录操作日志
+    if let Err(e) = db.log_manual_trade_data_add(admin_id, &admin_email, user_id, &user_email, req.exchange_id, &exchange_name, req.trade_volume_usdt, req.fee_usdt, &req.trade_date) {
+        // 日志记录失败不应中断主流程，但应记录错误
+        eprintln!("[Log Error] Failed to log manual trade data addition: {:?}", e);
+    }
+
     HttpResponse::Ok().json(serde_json::json!({"message": "每日交易数据添加/更新成功"}))
+}
+
+#[get("/manual_trade_data_log")]
+pub async fn get_manual_trade_data_log(db: web::Data<Database>) -> impl Responder {
+    println!("API Info: /api/admin/manual_trade_data_log - 收到获取手动添加交易数据日志的请求。");
+    match db.get_manual_trade_data_log() {
+        Ok(logs) => {
+            println!("API Success: /api/admin/manual_trade_data_log - 成功获取 {} 条日志。", logs.len());
+            HttpResponse::Ok().json(logs)
+        }
+        Err(e) => {
+            eprintln!("API Error: /api/admin/manual_trade_data_log - 获取日志失败: {:?}", e);
+            HttpResponse::InternalServerError().json(serde_json::json!({"error": "获取日志失败"}))
+        }
+    }
 }
 
 // 获取指定日期的所有用户交易记录
