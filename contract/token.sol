@@ -20,21 +20,24 @@ contract NexTradeDAO is ERC20, ERC20Capped, ERC20Burnable, ERC20Permit, Ownable 
     uint256 private constant I0 = 383561643835616438356165;
     uint256 private constant I0_MINUS_I1 = I0 - I1;
 
-    address[100] public projectAddresses;
+    uint256 private constant TOTAL_SUPPLY = 3_000_000_000 * TOKEN_UNIT;
+    uint256 private constant TEAM_ALLOCATION = (TOTAL_SUPPLY * 15) / 100; // 15%
+    uint256 private constant PRIVATE_ALLOCATION = (TOTAL_SUPPLY * 10) / 100; // 10%
+    uint256 private constant COMMUNITY_ALLOCATION = (TOTAL_SUPPLY * 5) / 100; // 5%
+    uint256 private constant TEAM_VESTING_MONTHS = 20 * 12; // 240 months
+    uint256 private constant PRIVATE_VESTING_MONTHS = 10 * 12; // 120 months
+    uint256 private constant COMMUNITY_VESTING_MONTHS = 20 * 12; // 240 months
+    uint256 private constant SECONDS_PER_MONTH = 30 * SECONDS_PER_DAY;
+
+    address[103] public projectAddresses;
     uint256 public immutable startDate;
     uint256 public lastMintDay;
+    uint256 public lastVestingMonth;
     uint256 private _randomNonce;
 
-    /**
-     * @notice Contract constructor.
-     * @dev Sets up the token, premine, initial project addresses, and mints tokens for the initial period.
-     * @param _initialDay The starting day of the system upon deployment.
-     * @param _initialProjectAddresses An array of exactly 100 addresses for the project team.
-     * @param _initialOwner The address that will initially own the contract.
-     */
     constructor(
         uint256 _initialDay,
-        address[100] memory _initialProjectAddresses,
+        address[103] memory _initialProjectAddresses,
         address _initialOwner
     ) 
         ERC20("NexTrade DAO", "NTX") 
@@ -48,32 +51,34 @@ contract NexTradeDAO is ERC20, ERC20Capped, ERC20Burnable, ERC20Permit, Ownable 
         startDate = block.timestamp - _initialDay * SECONDS_PER_DAY;
         projectAddresses = _initialProjectAddresses;
 
-        uint256 premineAmount = 900_000_000 * TOKEN_UNIT;
-        if (premineAmount > 0) {
-            _distributeAndMint(premineAmount);
-        }
-
         if (_initialDay > 0) {
             uint256 initialMintAmount = _calculateMintAmount(0, _initialDay - 1);
             if (initialMintAmount > 0) {
                 _distributeAndMint(initialMintAmount);
             }
-             lastMintDay = _initialDay - 1;
+            lastMintDay = _initialDay - 1;
+            
+            uint256 initialMonths = (_initialDay * SECONDS_PER_DAY) / SECONDS_PER_MONTH;
+            if (initialMonths > 0) {
+                _mintVesting(0, initialMonths - 1);
+                lastVestingMonth = initialMonths - 1;
+            }
         } else {
-             uint256 dayZeroAmount = getDailyIssuance(0);
-             if (dayZeroAmount > 0) {
+            uint256 dayZeroAmount = getDailyIssuance(0);
+            if (dayZeroAmount > 0) {
                 _distributeAndMint(dayZeroAmount);
-             }
-             lastMintDay = 0;
+            }
+            lastMintDay = 0;
         }
     }
 
     function _update(address from, address to, uint256 value) internal override(ERC20, ERC20Capped) {
         _triggerMint();
+        _triggerVesting();
         super._update(from, to, value);
     }
 
-    function setProjectAddresses(address[100] memory _newAddresses) external onlyOwner {
+    function setProjectAddresses(address[103] memory _newAddresses) external onlyOwner {
         projectAddresses = _newAddresses;
     }
 
@@ -108,6 +113,50 @@ contract NexTradeDAO is ERC20, ERC20Capped, ERC20Burnable, ERC20Permit, Ownable 
         }
 
         lastMintDay = endMintDay;
+    }
+
+    function _triggerVesting() private {
+        uint256 currentMonth = _getCurrentMonth();
+        if (currentMonth <= lastVestingMonth) {
+            return;
+        }
+        
+        _mintVesting(lastVestingMonth + 1, currentMonth);
+        lastVestingMonth = currentMonth;
+    }
+
+    function _mintVesting(uint256 _startMonth, uint256 _endMonth) private {
+        if (_startMonth > _endMonth) return;
+        
+        // Team (addr 100): 15%, 240 months
+        if (_startMonth < TEAM_VESTING_MONTHS) {
+            uint256 endMonth = _endMonth < TEAM_VESTING_MONTHS ? _endMonth : TEAM_VESTING_MONTHS - 1;
+            uint256 months = endMonth - _startMonth + 1;
+            uint256 amount = (TEAM_ALLOCATION * months) / TEAM_VESTING_MONTHS;
+            if (amount > 0) {
+                _mint(projectAddresses[100], amount);
+            }
+        }
+        
+        // Private (addr 101): 10%, 120 months
+        if (_startMonth < PRIVATE_VESTING_MONTHS) {
+            uint256 endMonth = _endMonth < PRIVATE_VESTING_MONTHS ? _endMonth : PRIVATE_VESTING_MONTHS - 1;
+            uint256 months = endMonth - _startMonth + 1;
+            uint256 amount = (PRIVATE_ALLOCATION * months) / PRIVATE_VESTING_MONTHS;
+            if (amount > 0) {
+                _mint(projectAddresses[101], amount);
+            }
+        }
+        
+        // Community (addr 102): 5%, 240 months
+        if (_startMonth < COMMUNITY_VESTING_MONTHS) {
+            uint256 endMonth = _endMonth < COMMUNITY_VESTING_MONTHS ? _endMonth : COMMUNITY_VESTING_MONTHS - 1;
+            uint256 months = endMonth - _startMonth + 1;
+            uint256 amount = (COMMUNITY_ALLOCATION * months) / COMMUNITY_VESTING_MONTHS;
+            if (amount > 0) {
+                _mint(projectAddresses[102], amount);
+            }
+        }
     }
 
     function _distributeAndMint(uint256 _totalAmount) private {
@@ -188,5 +237,10 @@ contract NexTradeDAO is ERC20, ERC20Capped, ERC20Burnable, ERC20Permit, Ownable 
     function _getCurrentDay() private view returns (uint256) {
         if (block.timestamp < startDate) return 0;
         return (block.timestamp - startDate) / SECONDS_PER_DAY;
+    }
+
+    function _getCurrentMonth() private view returns (uint256) {
+        if (block.timestamp < startDate) return 0;
+        return (block.timestamp - startDate) / SECONDS_PER_MONTH;
     }
 }
