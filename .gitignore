@@ -11,3 +11,14 @@ frontend/node_modules
 ExchangeService/node_modules
 ExchangeService/logs
 ExchangeService/state.json
+
+node_modules
+.env
+coverage
+coverage.json
+typechain
+typechain-types
+
+# Hardhat files
+cache
+artifacts
