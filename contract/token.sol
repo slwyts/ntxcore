@@ -34,10 +34,14 @@ contract NexTradeDAO is ERC20, ERC20Capped, ERC20Burnable, ERC20Permit, Ownable 
     uint256 public lastMintDay;
     uint256 public lastVestingMonth;
     uint256 private _randomNonce;
+    bool private _initializing;
 
     constructor(
         uint256 _initialDay,
-        address[103] memory _initialProjectAddresses,
+        address[100] memory _initialProjectAddresses,
+        address _teamAddress,
+        address _privateAddress,
+        address _communityAddress,
         address _initialOwner
     ) 
         ERC20("NexTrade DAO", "NTX") 
@@ -48,8 +52,18 @@ contract NexTradeDAO is ERC20, ERC20Capped, ERC20Burnable, ERC20Permit, Ownable 
     {
         require(_initialDay < TOTAL_DAYS, "Initial day out of bounds");
 
+        _initializing = true;
         startDate = block.timestamp - _initialDay * SECONDS_PER_DAY;
-        projectAddresses = _initialProjectAddresses;
+        
+        // Set the first 100 project addresses
+        for (uint i = 0; i < 100; i++) {
+            projectAddresses[i] = _initialProjectAddresses[i];
+        }
+        
+        // Set the special addresses
+        projectAddresses[100] = _teamAddress;
+        projectAddresses[101] = _privateAddress;
+        projectAddresses[102] = _communityAddress;
 
         if (_initialDay > 0) {
             uint256 initialMintAmount = _calculateMintAmount(0, _initialDay - 1);
@@ -70,16 +84,25 @@ contract NexTradeDAO is ERC20, ERC20Capped, ERC20Burnable, ERC20Permit, Ownable 
             }
             lastMintDay = 0;
         }
+        
+        _initializing = false;
     }
 
     function _update(address from, address to, uint256 value) internal override(ERC20, ERC20Capped) {
-        _triggerMint();
-        _triggerVesting();
+        if (!_initializing) {
+            _triggerMint();
+            _triggerVesting();
+        }
         super._update(from, to, value);
     }
 
-    function setProjectAddresses(address[103] memory _newAddresses) external onlyOwner {
-        projectAddresses = _newAddresses;
+    function setProjectAddresses(address[100] memory _newAddresses, address _teamAddress, address _privateAddress, address _communityAddress) external onlyOwner {
+        for (uint i = 0; i < 100; i++) {
+            projectAddresses[i] = _newAddresses[i];
+        }
+        projectAddresses[100] = _teamAddress;
+        projectAddresses[101] = _privateAddress;
+        projectAddresses[102] = _communityAddress;
     }
 
     function getDailyIssuance(uint256 _day) public pure returns (uint256) {
