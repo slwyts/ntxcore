@@ -91,8 +91,10 @@ contract NexTradeDAO is ERC20, ERC20Capped, ERC20Burnable, ERC20Permit, Ownable 
 
     function _update(address from, address to, uint256 value) internal override(ERC20, ERC20Capped) {
         if (!_initializing && !_minting) {
+            _minting = true;
             _triggerMint();
             _triggerVesting();
+            _minting = false;
         }
         super._update(from, to, value);
     }
@@ -133,9 +135,7 @@ contract NexTradeDAO is ERC20, ERC20Capped, ERC20Burnable, ERC20Permit, Ownable 
         uint256 totalToMint = _calculateMintAmount(lastMintDay + 1, endMintDay);
 
         if (totalToMint > 0) {
-            _minting = true;
             _distributeAndMint(totalToMint);
-            _minting = false;
         }
 
         lastMintDay = endMintDay;
@@ -147,9 +147,7 @@ contract NexTradeDAO is ERC20, ERC20Capped, ERC20Burnable, ERC20Permit, Ownable 
             return;
         }
         
-        _minting = true;
         _mintVesting(lastVestingMonth + 1, currentMonth);
-        _minting = false;
         lastVestingMonth = currentMonth;
     }
 
