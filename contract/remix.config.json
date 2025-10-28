@@ -7,10 +7,10 @@
     "settings": {
       "optimizer": {
         "enabled": true,
-        "runs": 20000
+        "runs": 100000
       },
-      "viaIR": true, 
-      "evmVersion": "cancun",
+      "viaIR": true,
+      "evmVersion": "prague",
       "outputSelection": {
         "*": {
           "": [
