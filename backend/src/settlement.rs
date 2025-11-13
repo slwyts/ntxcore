@@ -8,18 +8,12 @@ use chrono_tz::Asia::Shanghai;
 use crate::db::{Database, DailyUserRebate};
 use crate::db::FakeTradeData;
 
-// ====================================================================================================
-// NTX 代币分配参数定义
-// ====================================================================================================
 const DAYS_PHASE1: i64 = 20 * 365;
 const DAYS_PHASE2: i64 = 30 * 365;
 const TOTAL_DAYS: i64 = DAYS_PHASE1 + DAYS_PHASE2;
 const TOTAL_PHASE1_NTX: f64 = 1.68e9;
 const TOTAL_PHASE2_NTX: f64 = 0.42e9;
 
-// ====================================================================================================
-// 辅助函数
-// ====================================================================================================
 fn get_settlement_trade_date_string() -> String {
     let now_utc8 = Utc::now().with_timezone(&Shanghai);
     let yesterday_utc8 = now_utc8 - ChronoDuration::days(1);
@@ -46,9 +40,6 @@ fn get_daily_ntx_issuance(current_date_str: &str, genesis_date_str: &str) -> f64
     daily_issuance.max(0.0)
 }
 
-// ====================================================================================================
-// 请求体结构体
-// ====================================================================================================
 #[derive(Deserialize)]
 pub struct TriggerSettlementRequest {
     pub date: Option<String>,
@@ -58,18 +49,13 @@ pub struct ForceNtxControlRequest {
     pub date: Option<String>,
 }
 
-// ====================================================================================================
-// 业务逻辑函数（可被 HTTP 路由和定时任务共用）
-// ====================================================================================================
 pub async fn trigger_daily_settlement_logic(
     db: web::Data<Database>,
     date: Option<String>,
 ) -> Result<(), String> {
-    // --- 1. 数据准备阶段 ---
     let trade_date_str = date.unwrap_or_else(get_settlement_trade_date_string);
     println!("Logic Info: trigger_daily_settlement - Starting settlement for trade date: {}", trade_date_str);
 
-    // 从数据库并行获取所有需要的数据
     let (platform_data, trades_for_settlement, exchanges_info, referral_map, active_kols_map) = match (
         db.get_platform_data(),
         db.get_trades_and_user_info_for_date(&trade_date_str),
@@ -99,7 +85,6 @@ pub async fn trigger_daily_settlement_logic(
         return Ok(());
     }
 
-    // 找到所有今天有下线交易的用户ID
     let mut users_with_trading_downlines: HashSet<i64> = HashSet::new();
     for trade in &trades_for_settlement {
         if let Some(&inviter_id) = referral_map.get(&trade.user_id) {
@@ -107,58 +92,48 @@ pub async fn trigger_daily_settlement_logic(
         }
     }
 
-    // 初始化最终收益、佣金记录和状态缓存
     let mut final_earnings: HashMap<i64, DailyUserRebate> = HashMap::new();
     let mut commission_records: Vec<(i64, i64, f64, String, String)> = Vec::new();
     let mut broker_status_cache: HashMap<i64, bool> = HashMap::new();
 
-    // 按用户ID聚合交易数据：总手续费和交易所返佣基数
     let mut user_aggregated_data: HashMap<i64, (f64, f64)> = HashMap::new();
     for trade in &trades_for_settlement {
         let entry = user_aggregated_data.entry(trade.user_id).or_insert((0.0, 0.0));
-        entry.0 += trade.fee_usdt; // 累加用户总手续费
+        entry.0 += trade.fee_usdt;
         let exchange_efficiency = exchanges_info.get(&trade.exchange_id).cloned().unwrap_or(0.0) / 100.0;
-        entry.1 += trade.fee_usdt * exchange_efficiency; // 累加计算返佣的基数 (raw_usdt_rebate_from_exchange)
+        entry.1 += trade.fee_usdt * exchange_efficiency;
     }
 
-    // 计算平台当日总手续费、总交易量和NTX每日供应量
     let platform_total_fees_for_day: f64 = user_aggregated_data.values().map(|(fee, _)| *fee).sum();
     let total_trading_volume_today: f64 = trades_for_settlement.iter().map(|t| t.trade_volume_usdt).sum();
     let daily_ntx_supply_for_today = get_daily_ntx_issuance(&trade_date_str, &platform_data.genesis_date);
 
-    // --- 3. 核心结算逻辑循环 ---
-    // 遍历每一个产生了交易的用户
     for (trader_id, (total_fee, raw_usdt_rebate_from_exchange)) in user_aggregated_data.iter() {
         let trader_id = *trader_id;
         let total_fee = *total_fee;
         let raw_usdt_rebate_from_exchange = *raw_usdt_rebate_from_exchange;
 
-        // 获取或创建该交易者的收益记录条目
+
         let user_earning_entry = final_earnings.entry(trader_id).or_default();
         user_earning_entry.total_fees_incurred += total_fee;
 
-
-        // 计算交易者自己的 NTX 返佣 (以及其直接上级的 NTX 奖励)
         let ntx_rebate_total = if platform_total_fees_for_day > 0.0 {
             (total_fee / platform_total_fees_for_day) * daily_ntx_supply_for_today
         } else { 0.0 };
 
-        let user_ntx_share = ntx_rebate_total * 0.90; // 交易者获得90%
-        let inviter_ntx_share = ntx_rebate_total * 0.10; // 交易者的直接上级获得10%
+        let user_ntx_share = ntx_rebate_total * 0.90;
+        let inviter_ntx_share = ntx_rebate_total * 0.10;
 
         user_earning_entry.ntx_rebate += user_ntx_share;
 
         if let Some(&inviter_id) = referral_map.get(&trader_id) {
-            // 检查上级是否是KOL
             if !active_kols_map.contains_key(&inviter_id) {
-                // 上级不是KOL，正常分配
                 if inviter_ntx_share > 0.0 {
                     let inviter_earning_entry = final_earnings.entry(inviter_id).or_default();
                     inviter_earning_entry.ntx_bonus_earned += inviter_ntx_share;
                     commission_records.push((inviter_id, trader_id, inviter_ntx_share, "NTX".to_string(), trade_date_str.clone()));
                 }
             } else {
-                // 上级是KOL，将奖励分配给 user_id = 1
                 if inviter_ntx_share > 0.0 {
                     println!(
                         "Logic Info: KOL Upline Rule! Trader {}'s inviter {} is a KOL. Redirecting {} NTX bonus to user_id=1.",
@@ -171,50 +146,41 @@ pub async fn trigger_daily_settlement_logic(
             }
         }
 
-        // --- 【重构后的Upline奖励与KOL奖励计算】---
         let mut bonus_20_pct_claimed = false;
         let mut platform_bonus_10_pct_claimed = false;
         let mut current_user_id = trader_id;
         let mut is_first_level = true;
 
-        // 为KOL计算引入的变量
-        // total_standard_usdt_bonus: 用于累加所有非KOL的标准佣金总额
-        // first_kol_in_chain: 用于存储在Upline中找到的第一个KOL的信息，确保奖励只给第一个
         let mut total_standard_usdt_bonus: f64 = 0.0;
         let mut first_kol_in_chain: Option<(i64, f64)> = None;
 
-        // 开始向上遍历推荐链
         while let Some(&inviter_id) = referral_map.get(&current_user_id) {
             
-            // --- c.1. 计算标准佣金 ---
             let is_inviter_broker = *broker_status_cache
                 .entry(inviter_id)
                 .or_insert_with(|| db.is_broker(inviter_id).unwrap_or(false));
 
-            // 直接上级奖励 (30%)
             if is_first_level {
                 let usdt_bonus = raw_usdt_rebate_from_exchange * 0.30;
                 if usdt_bonus > 0.0 {
                     let inviter_earning_entry = final_earnings.entry(inviter_id).or_default();
                     inviter_earning_entry.usdt_bonus_earned += usdt_bonus;
                     commission_records.push((inviter_id, trader_id, usdt_bonus, "USDT".to_string(), trade_date_str.clone()));
-                    total_standard_usdt_bonus += usdt_bonus; // 累加到标准佣金总额
+                    total_standard_usdt_bonus += usdt_bonus;
                 }
             }
 
-            // 经纪商奖励 (20%) - 给Upline中遇到的第一个经纪商
             if !bonus_20_pct_claimed && is_inviter_broker {
                 let usdt_bonus = raw_usdt_rebate_from_exchange * 0.20;
                 if usdt_bonus > 0.0 {
                     let inviter_earning_entry = final_earnings.entry(inviter_id).or_default();
                     inviter_earning_entry.usdt_bonus_earned += usdt_bonus;
                     commission_records.push((inviter_id, trader_id, usdt_bonus, "USDT".to_string(), trade_date_str.clone()));
-                    total_standard_usdt_bonus += usdt_bonus; // 累加到标准佣金总额
+                    total_standard_usdt_bonus += usdt_bonus;
                 }
                 bonus_20_pct_claimed = true;
             }
             
-            // 平台奖励 (10%) - 这个逻辑比较特殊，基于当前用户是否是经纪商来决定是否给其上级发奖
             let is_current_user_broker = *broker_status_cache
                 .entry(current_user_id)
                 .or_insert_with(|| db.is_broker(current_user_id).unwrap_or(false));
@@ -224,37 +190,28 @@ pub async fn trigger_daily_settlement_logic(
                     let platform_bonus_recipient_entry = final_earnings.entry(inviter_id).or_default();
                     platform_bonus_recipient_entry.usdt_bonus_earned += usdt_bonus;
                     commission_records.push((inviter_id, trader_id, usdt_bonus, "USDT".to_string(), trade_date_str.clone()));
-                    total_standard_usdt_bonus += usdt_bonus; // 累加到标准佣金总额
+                    total_standard_usdt_bonus += usdt_bonus;
                 }
                 platform_bonus_10_pct_claimed = true;
             }
 
-            // --- c.2. 识别Upline中的KOL ---
-            // 检查当前上级(inviter_id)是否是活跃的KOL
-            // 并且我们还没有在这条推荐链上确定过KOL
             if first_kol_in_chain.is_none() {
                 if let Some(&kol_rate) = active_kols_map.get(&inviter_id) {
-                     // 如果是，记录下KOL的ID和他的费率，循环结束后再统一计算
                     first_kol_in_chain = Some((inviter_id, kol_rate));
                 }
             }
             
-            // 准备下一次循环
             current_user_id = inviter_id;
             is_first_level = false;
 
-            // 优化：如果所有可能的标准奖励和KOL都已找到，可以提前退出循环
             if bonus_20_pct_claimed && platform_bonus_10_pct_claimed && first_kol_in_chain.is_some() {
                 break;
             }
         }
 
-        // --- c.3. 【新逻辑】在遍历完Upline后，计算并分配KOL的额外奖励 ---
         if let Some((kol_id, kol_rate)) = first_kol_in_chain {
-            // KOL的总目标佣金 = 返佣基数 * KOL的约定比例
             let kol_target_payout = raw_usdt_rebate_from_exchange * (kol_rate / 100.0);
             
-            // KOL的额外奖励 = 他的总目标佣金 - 已经作为标准佣金发出去的总额
             let kol_extra_bonus = kol_target_payout - total_standard_usdt_bonus;
 
             if kol_extra_bonus > 0.0 {
@@ -269,14 +226,10 @@ pub async fn trigger_daily_settlement_logic(
         }
     }
 
-    // --- 4. 【KOL特殊规则】处理KOL自身交易产生的NTX ---
-    println!("DEBUG: --- Starting final KOL NTX cleanup ---"); // 增加一个开始标记
     let mut ntx_redirected_from_kols_direct_trade: f64 = 0.0;
     for (user_id, earnings) in final_earnings.iter_mut() {
-        // 检查该用户是不是KOL
         let is_kol = active_kols_map.contains_key(user_id);
         
-        // 增加详细日志，无论是不是KOL都打印
         if earnings.ntx_rebate > 0.0 {
             println!(
                 "DEBUG: Checking user_id: {}. Is KOL? {}. NTX rebate before check: {:.4}",
@@ -284,7 +237,7 @@ pub async fn trigger_daily_settlement_logic(
             );
         }
 
-        if is_kol { // 只有当确定是KOL时才进入
+        if is_kol {
             if earnings.ntx_rebate > 0.0 {
                 println!(
                     "Logic Info: KOL Direct Trade Rule! User {} is a KOL. Their direct NTX rebate of {} is being redirected to user_id=1.",
@@ -295,9 +248,7 @@ pub async fn trigger_daily_settlement_logic(
             }
         }
     }
-    println!("DEBUG: --- Finished final KOL NTX cleanup ---"); // 增加一个结束标记
 
-    // 将所有从KOL自身交易重定向的NTX统一加到 user_id = 1 的账户上
     if ntx_redirected_from_kols_direct_trade > 0.0 {
         let platform_user_earning_entry = final_earnings.entry(1).or_default();
         platform_user_earning_entry.ntx_bonus_earned += ntx_redirected_from_kols_direct_trade;
@@ -305,17 +256,13 @@ pub async fn trigger_daily_settlement_logic(
             "Logic Info: Total of {} NTX (from KOLs' direct trading) credited to user_id=1.",
             ntx_redirected_from_kols_direct_trade
         );
-         // 增加一条佣金记录，便于追踪这部分平台收入 (contributor_id=1 代表平台内部流转)
         commission_records.push((1, 1, ntx_redirected_from_kols_direct_trade, "NTX_KOL_DIRECT".to_string(), trade_date_str.clone()));
     }
 
-    // --- 5. 数据落盘 ---
-    // 汇总最终的统计数据
     let total_ntx_distributed = final_earnings.values().map(|e| e.ntx_rebate + e.ntx_bonus_earned).sum();
     let total_usdt_commissions = final_earnings.values().map(|e| e.usdt_rebate + e.usdt_bonus_earned).sum();
     let all_involved_user_ids: HashSet<i64> = final_earnings.keys().cloned().collect();
 
-    // 执行数据库写入操作
     match db.perform_daily_settlement(
         &trade_date_str,
         &final_earnings,
@@ -424,9 +371,6 @@ pub async fn force_ntx_control_logic(
     }
 }
 
-// ====================================================================================================
-// Actix 路由处理函数（仅做参数解析和响应，调用上面逻辑函数）
-// ====================================================================================================
 #[post("/trigger_daily_settlement")]
 pub async fn trigger_daily_settlement(
     db: web::Data<Database>,
