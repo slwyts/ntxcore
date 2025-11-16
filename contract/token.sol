@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.30;
 
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Capped.sol";
-import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
-import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {ERC1363} from "@openzeppelin/contracts/token/ERC20/extensions/ERC1363.sol";
+import {ERC20Capped} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Capped.sol";
+import {ERC20Burnable} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
+import {ERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
  * @title NexTradeDAO Token (NTX)
@@ -17,15 +18,20 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  * - Owner authority is strictly limited to updating distribution wallets so the business can rotate custodial addresses when required.
  * - There are no pausability, blacklist, or confiscation mechanics—users retain full control of their balances.
  * - The design is intentionally custodial/centralized because NTX funds a rebate mining program; this is documented behavior, not a backdoor.
- * - Official resources: https://www.ntxdao.com and https://app.ntxdao.com for transparency, documentation, and audits.
- * - Direct contacts for compliance and due diligence:
- *      • Platform operations: admin@ntxdao.com
- *      • Administrative oversight: nextrader365@gmail.com
- *      • Core engineering: slwyts@foxmail.com
+ * - Official resources: https://www.ntxdao.com (public portal & documentation) and https://app.ntxdao.com (account onboarding + rebate tracking for CEX trading) to explain the rebate program and publish audits.
+ * - Official telegram: https://t.me/+eUGjIMUFdio2ODg1 for community discussion and announcements.
+ * - Operations model: users register on partner centralized exchanges through NTX-exclusive referral links/invites, trade normally on the CEX, and the platform rebates part of the collected fees in NTX tokens—no staking or lock-up is required, NTX simply acts as the settlement currency for rewards.
+ * - Custodial wallets (project, team, private, community) are safeguarded by a DAO-managed multisig shared between the core organization and elected community signers; address changes require on-chain proposals plus time-locked execution, so no single party can reroute funds.
+ * - For compliance and due diligence inquiries, reach the platform operations, administrative oversight, or core engineering teams via the published security contacts.
  */
-contract NexTradeDAO is ERC20, ERC20Capped, ERC20Burnable, ERC20Permit, Ownable {
-    uint256 private constant DECIMALS = 18;
-    uint256 private constant TOKEN_UNIT = 10**DECIMALS;
+/// @custom:platform-ops admin@ntxdao.com
+/// @custom:contact-and-security nextrader365@gmail.com
+/// @custom:core-engineering slwyts@tuta.io
+
+contract NexTradeDAO is ERC20, ERC1363, ERC20Capped, ERC20Burnable, ERC20Permit, Ownable {
+
+    uint8 private constant DECIMALS = 18;
+    uint256 private constant TOKEN_UNIT = 10 ** DECIMALS;
     uint256 private constant SECONDS_PER_DAY = 86400;
 
     uint256 private constant DAYS_PHASE1 = 20 * 365;
