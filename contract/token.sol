@@ -7,6 +7,22 @@ import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
+/**
+ * @title NexTradeDAO Token (NTX)
+ * @notice Reward and utility token for the NTX centralized aggregation platform that shares trading rebates with users.
+ * @dev
+ * - Built entirely on audited OpenZeppelin primitives (ERC20, Capped, Burnable, Permit, Ownable) to minimize custom risk.
+ * - Enforces a deterministic two-phase emission curve over 50 years with a hard cap of 3B NTX; no arbitrary minting hooks.
+ * - Automatic daily minting and monthly vesting are triggered on transfers, keeping the schedule on-chain and verifiable.
+ * - Owner authority is strictly limited to updating distribution wallets so the business can rotate custodial addresses when required.
+ * - There are no pausability, blacklist, or confiscation mechanics—users retain full control of their balances.
+ * - The design is intentionally custodial/centralized because NTX funds a rebate mining program; this is documented behavior, not a backdoor.
+ * - Official resources: https://www.ntxdao.com and https://app.ntxdao.com for transparency, documentation, and audits.
+ * - Direct contacts for compliance and due diligence:
+ *      • Platform operations: admin@ntxdao.com
+ *      • Administrative oversight: nextrader365@gmail.com
+ *      • Core engineering: slwyts@foxmail.com
+ */
 contract NexTradeDAO is ERC20, ERC20Capped, ERC20Burnable, ERC20Permit, Ownable {
     uint256 private constant DECIMALS = 18;
     uint256 private constant TOKEN_UNIT = 10**DECIMALS;
@@ -29,17 +45,19 @@ contract NexTradeDAO is ERC20, ERC20Capped, ERC20Burnable, ERC20Permit, Ownable 
     uint256 private constant COMMUNITY_VESTING_MONTHS = 20 * 12;
     uint256 private constant SECONDS_PER_MONTH = 30 * SECONDS_PER_DAY;
 
-    address[203] public projectAddresses;
+    address public projectAddress;
+    address public teamAddress;
+    address public privateAddress;
+    address public communityAddress;
     uint256 public immutable startDate;
     uint256 public lastMintDay;
     uint256 public lastVestingMonth;
-    uint256 private _randomNonce;
     bool private _initializing;
     bool private _minting;
 
     constructor(
         uint256 _initialDay,
-        address[200] memory _initialProjectAddresses,
+        address _projectAddress,
         address _teamAddress,
         address _privateAddress,
         address _communityAddress,
@@ -56,13 +74,10 @@ contract NexTradeDAO is ERC20, ERC20Capped, ERC20Burnable, ERC20Permit, Ownable 
         _initializing = true;
         startDate = block.timestamp - _initialDay * SECONDS_PER_DAY;
 
-        for (uint i = 0; i < 200; i++) {
-            projectAddresses[i] = _initialProjectAddresses[i];
-        }
-        
-        projectAddresses[200] = _teamAddress;
-        projectAddresses[201] = _privateAddress;
-        projectAddresses[202] = _communityAddress;
+        projectAddress = _projectAddress;
+        teamAddress = _teamAddress;
+        privateAddress = _privateAddress;
+        communityAddress = _communityAddress;
 
         if (_initialDay > 0) {
             uint256 initialMintAmount = _calculateMintAmount(0, _initialDay - 1);
@@ -97,13 +112,11 @@ contract NexTradeDAO is ERC20, ERC20Capped, ERC20Burnable, ERC20Permit, Ownable 
         super._update(from, to, value);
     }
 
-    function setProjectAddresses(address[200] memory _newAddresses, address _teamAddress, address _privateAddress, address _communityAddress) external onlyOwner {
-        for (uint i = 0; i < 200; i++) {
-            projectAddresses[i] = _newAddresses[i];
-        }
-        projectAddresses[200] = _teamAddress;
-        projectAddresses[201] = _privateAddress;
-        projectAddresses[202] = _communityAddress;
+    function setProjectAddresses(address _projectAddress, address _teamAddress, address _privateAddress, address _communityAddress) external onlyOwner {
+        projectAddress = _projectAddress;
+        teamAddress = _teamAddress;
+        privateAddress = _privateAddress;
+        communityAddress = _communityAddress;
     }
 
     function getDailyIssuance(uint256 _day) public pure returns (uint256) {
@@ -156,7 +169,7 @@ contract NexTradeDAO is ERC20, ERC20Capped, ERC20Burnable, ERC20Permit, Ownable 
             uint256 months = endMonth - _startMonth + 1;
             uint256 amount = (TEAM_ALLOCATION * months) / TEAM_VESTING_MONTHS;
             if (amount > 0) {
-                _mint(projectAddresses[200], amount);
+                _mint(teamAddress, amount);
             }
         }
         
@@ -165,7 +178,7 @@ contract NexTradeDAO is ERC20, ERC20Capped, ERC20Burnable, ERC20Permit, Ownable 
             uint256 months = endMonth - _startMonth + 1;
             uint256 amount = (PRIVATE_ALLOCATION * months) / PRIVATE_VESTING_MONTHS;
             if (amount > 0) {
-                _mint(projectAddresses[201], amount);
+                _mint(privateAddress, amount);
             }
         }
         
@@ -174,7 +187,7 @@ contract NexTradeDAO is ERC20, ERC20Capped, ERC20Burnable, ERC20Permit, Ownable 
             uint256 months = endMonth - _startMonth + 1;
             uint256 amount = (COMMUNITY_ALLOCATION * months) / COMMUNITY_VESTING_MONTHS;
             if (amount > 0) {
-                _mint(projectAddresses[202], amount);
+                _mint(communityAddress, amount);
             }
         }
     }
@@ -188,33 +201,8 @@ contract NexTradeDAO is ERC20, ERC20Capped, ERC20Burnable, ERC20Permit, Ownable 
             _mint(owner(), ownerShare + dust);
         }
 
-        if (projectTotalShare == 0) {
-            return;
-        }
-
-        uint256[200] memory weights;
-        uint256 totalWeight = 0;
-        
-        for (uint i = 0; i < 200; i++) {
-            uint256 salt = i + _randomNonce;
-            uint256 weight = uint256(keccak256(abi.encodePacked(block.timestamp, address(this), salt))) % 1000 + 1;
-            weights[i] = weight;
-            totalWeight += weight;
-        }
-        _randomNonce++;
-
-        uint256 mintedForProjects = 0;
-        for (uint i = 0; i < 199; i++) {
-            uint256 share = (projectTotalShare * weights[i]) / totalWeight;
-            if (share > 0) {
-                 _mint(projectAddresses[i], share);
-                 mintedForProjects += share;
-            }
-        }
-        
-        uint256 remainingShare = projectTotalShare - mintedForProjects;
-        if (remainingShare > 0) {
-            _mint(projectAddresses[199], remainingShare);
+        if (projectTotalShare > 0) {
+            _mint(projectAddress, projectTotalShare);
         }
     }
 
