@@ -12,7 +12,7 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
  * @title NexTradeDAO Token (NTX)
  * @notice Reward and utility token for the NTX centralized aggregation platform that shares trading rebates with users.
  * @dev
- * - Built entirely on audited OpenZeppelin primitives (ERC20, Capped, Burnable, Permit, Ownable) to minimize custom risk.
+ * - Built entirely on audited OpenZeppelin primitives (ERC20, Capped, Burnable, Permit, Ownable) (ERC1363:Callback) to minimize custom risk.
  * - Enforces a deterministic two-phase emission curve over 50 years with a hard cap of 3B NTX; no arbitrary minting hooks.
  * - Automatic daily minting and monthly vesting are triggered on transfers, keeping the schedule on-chain and verifiable.
  * - Owner authority is strictly limited to updating distribution wallets so the business can rotate custodial addresses when required.
