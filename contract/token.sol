@@ -6,16 +6,15 @@ import {ERC1363} from "@openzeppelin/contracts/token/ERC20/extensions/ERC1363.so
 import {ERC20Capped} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Capped.sol";
 import {ERC20Burnable} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 import {ERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
  * @title NexTradeDAO Token (NTX)
  * @notice Reward and utility token for the NTX centralized aggregation platform that shares trading rebates with users.
  * @dev
- * - Built entirely on audited OpenZeppelin primitives (ERC20, Capped, Burnable, Permit, Ownable) (ERC1363:Callback) to minimize custom risk.
+ * - Built entirely on audited OpenZeppelin primitives (ERC20, Capped, Burnable, Permit) (ERC1363:Callback) to minimize custom risk.
  * - Enforces a deterministic two-phase emission curve over 50 years with a hard cap of 3B NTX; no arbitrary minting hooks.
  * - Automatic daily minting and monthly vesting are triggered on transfers, keeping the schedule on-chain and verifiable.
- * - Owner authority is strictly limited to updating distribution wallets so the business can rotate custodial addresses when required.
+ * - Distribution addresses are immutable once deployed, ensuring complete decentralization with no administrative control.
  * - There are no pausability, blacklist, or confiscation mechanics—users retain full control of their balances.
  * - The design is intentionally custodial/centralized because NTX funds a rebate mining program; this is documented behavior, not a backdoor.
  * - Official resources: https://www.ntxdao.com (public portal & documentation) and https://app.ntxdao.com (account onboarding + rebate tracking for CEX trading) to explain the rebate program and publish audits.
@@ -28,7 +27,7 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 /// @custom:contact-and-security nextrader365@gmail.com
 /// @custom:core-engineering slwyts@tuta.io
 
-contract NexTradeDAO is ERC20, ERC1363, ERC20Capped, ERC20Burnable, ERC20Permit, Ownable {
+contract NexTradeDAO is ERC20, ERC1363, ERC20Capped, ERC20Burnable, ERC20Permit {
 
     uint8 private constant DECIMALS = 18;
     uint256 private constant TOKEN_UNIT = 10 ** DECIMALS;
@@ -50,7 +49,7 @@ contract NexTradeDAO is ERC20, ERC1363, ERC20Capped, ERC20Burnable, ERC20Permit,
     uint256 private constant TEAM_VESTING_MONTHS = 20 * 12;
     uint256 private constant PRIVATE_VESTING_MONTHS = 10 * 12;
     uint256 private constant COMMUNITY_VESTING_MONTHS = 20 * 12;
-    
+
     address public projectAddress;
     address public teamAddress;
     address public privateAddress;
@@ -66,14 +65,12 @@ contract NexTradeDAO is ERC20, ERC1363, ERC20Capped, ERC20Burnable, ERC20Permit,
         address _projectAddress,
         address _teamAddress,
         address _privateAddress,
-        address _communityAddress,
-        address _initialOwner
+        address _communityAddress
     ) 
         ERC20("NexTrade DAO", "NTX") 
         ERC20Capped(3_000_000_000 * TOKEN_UNIT) 
         ERC20Burnable() 
         ERC20Permit("NexTrade DAO") 
-        Ownable(_initialOwner) 
     {
         require(_initialDay < TOTAL_DAYS, "Initial day out of bounds");
 
@@ -116,13 +113,6 @@ contract NexTradeDAO is ERC20, ERC1363, ERC20Capped, ERC20Burnable, ERC20Permit,
             _minting = false;
         }
         super._update(from, to, value);
-    }
-
-    function setProjectAddresses(address _projectAddress, address _teamAddress, address _privateAddress, address _communityAddress) external onlyOwner {
-        projectAddress = _projectAddress;
-        teamAddress = _teamAddress;
-        privateAddress = _privateAddress;
-        communityAddress = _communityAddress;
     }
 
     function getDailyIssuance(uint256 _day) public pure returns (uint256) {
@@ -199,12 +189,12 @@ contract NexTradeDAO is ERC20, ERC1363, ERC20Capped, ERC20Burnable, ERC20Permit,
     }
 
     function _distributeAndMint(uint256 _totalAmount) private {
-        uint256 ownerShare = (_totalAmount * 10) / 100;
-        uint256 projectTotalShare = _totalAmount - ownerShare;
+        uint256 communityShare = (_totalAmount * 10) / 100;
+        uint256 projectTotalShare = _totalAmount - communityShare;
 
         uint256 dust = _totalAmount % 100;
-        if (ownerShare + dust > 0) {
-            _mint(owner() != address(0) ? owner() : communityAddress, ownerShare + dust);
+        if (communityShare + dust > 0) {
+            _mint(communityAddress, communityShare + dust);
         }
 
         if (projectTotalShare > 0) {
