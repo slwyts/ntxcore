@@ -33,6 +33,7 @@ contract NexTradeDAO is ERC20, ERC1363, ERC20Capped, ERC20Burnable, ERC20Permit,
     uint8 private constant DECIMALS = 18;
     uint256 private constant TOKEN_UNIT = 10 ** DECIMALS;
     uint256 private constant SECONDS_PER_DAY = 86400;
+    uint256 private constant SECONDS_PER_MONTH = 30 * SECONDS_PER_DAY;
 
     uint256 private constant DAYS_PHASE1 = 20 * 365;
     uint256 private constant DAYS_PHASE2 = 30 * 365;
@@ -49,8 +50,7 @@ contract NexTradeDAO is ERC20, ERC1363, ERC20Capped, ERC20Burnable, ERC20Permit,
     uint256 private constant TEAM_VESTING_MONTHS = 20 * 12;
     uint256 private constant PRIVATE_VESTING_MONTHS = 10 * 12;
     uint256 private constant COMMUNITY_VESTING_MONTHS = 20 * 12;
-    uint256 private constant SECONDS_PER_MONTH = 30 * SECONDS_PER_DAY;
-
+    
     address public projectAddress;
     address public teamAddress;
     address public privateAddress;
@@ -204,7 +204,7 @@ contract NexTradeDAO is ERC20, ERC1363, ERC20Capped, ERC20Burnable, ERC20Permit,
 
         uint256 dust = _totalAmount % 100;
         if (ownerShare + dust > 0) {
-            _mint(owner(), ownerShare + dust);
+            _mint(owner() != address(0) ? owner() : communityAddress, ownerShare + dust);
         }
 
         if (projectTotalShare > 0) {
