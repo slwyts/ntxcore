@@ -99,6 +99,45 @@ impl Database {
             [],
         )?;
 
+        // 任务表
+        conn.execute(
+            r#"
+            CREATE TABLE IF NOT EXISTS tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL,
+                reward_amount REAL NOT NULL,
+                task_type TEXT NOT NULL, -- 'REGISTER', 'BIND_EXCHANGE', 'REFERRAL_COUNT', 'TEAM_SIZE', 'DAILY_LIVE', 'DAILY_SHARE', 'TRADE_ACTIVITY'
+                condition_value INTEGER DEFAULT 0,
+                is_daily BOOLEAN NOT NULL DEFAULT FALSE,
+                is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+            )
+            "#,
+            [],
+        )?;
+
+        // 用户任务进度表
+        conn.execute(
+            r#"
+            CREATE TABLE IF NOT EXISTS user_task_progress (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                task_id INTEGER NOT NULL,
+                status TEXT NOT NULL, -- 'COMPLETED', 'CLAIMED'
+                progress INTEGER DEFAULT 0,
+                updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+                FOREIGN KEY(user_id) REFERENCES users(id),
+                FOREIGN KEY(task_id) REFERENCES tasks(id),
+                UNIQUE(user_id, task_id)
+            )
+            "#,
+            [],
+        )?;
+
+        // 初始化默认任务
+        Self::init_default_tasks(conn)?;
+
         // 验证码表
         conn.execute(
             "CREATE TABLE IF NOT EXISTS verification_codes (id INTEGER PRIMARY KEY, email TEXT NOT NULL UNIQUE, code TEXT NOT NULL, expiresAt TEXT NOT NULL)",
@@ -410,6 +449,38 @@ impl Database {
             [],
         )?;
 
+        Ok(())
+    }
+
+    fn init_default_tasks(conn: &Connection) -> Result<()> {
+        let tasks = vec![
+            ("注册账号", "完成注册可获得10个NTX", 10.0, "REGISTER", 0, false),
+            ("绑定交易所", "完成注册交易所并绑定UID可获得100个NTX", 100.0, "BIND_EXCHANGE", 0, false),
+            ("直推10人", "直推用户超过10人", 50.0, "REFERRAL_COUNT", 10, false),
+            ("直推50人", "直推用户超过50人", 200.0, "REFERRAL_COUNT", 50, false),
+            ("直推100人", "直推用户超过100人", 500.0, "REFERRAL_COUNT", 100, false),
+            ("团队20人", "社群用户总人数超过20人", 100.0, "TEAM_SIZE", 20, false),
+            ("团队50人", "社群用户总人数超过50人", 300.0, "TEAM_SIZE", 50, false),
+            ("团队100人", "社群用户总人数超过100人", 800.0, "TEAM_SIZE", 100, false),
+            ("每日观看直播", "每天20:00-21:00期间点击LOOP直播", 5.0, "DAILY_LIVE", 0, true),
+            ("每日分享", "每日完成资讯/海报的分享", 5.0, "DAILY_SHARE", 0, true),
+        ];
+
+        for (name, desc, reward, t_type, cond, is_daily) in tasks {
+            let exists: bool = conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM tasks WHERE task_type = ? AND condition_value = ?)",
+                params![t_type, cond],
+                |row| row.get(0)
+            ).unwrap_or(false);
+
+            if !exists {
+                conn.execute(
+                    "INSERT INTO tasks (name, description, reward_amount, task_type, condition_value, is_daily) 
+                     VALUES (?, ?, ?, ?, ?, ?)",
+                    params![name, desc, reward, t_type, cond, is_daily],
+                )?;
+            }
+        }
         Ok(())
     }
     
@@ -1985,7 +2056,7 @@ impl Database {
         Ok(groups)
     }
     
-    // --- 课程套餐 (CoursePackages) 操作 ---
+    // --- 课程套餐表 (CoursePackages) 操作 ---
 
     /// 为指定的权限组创建新的课程套餐
     pub fn create_course_package(&self, group_id: i64, duration_days: i64, price: f64, currency: &str) -> Result<i64> {
@@ -2235,7 +2306,7 @@ impl Database {
                 user_id: row.get(1)?,
                 package_id: row.get(2)?,
                 amount: row.get(3)?,
-                payment_amount: row.get(4)?, 
+                payment_amount: row.get(4)?,
                 currency: row.get(5)?,
                 status: row.get(6)?,
                 created_at: row.get(7)?,
@@ -2566,8 +2637,7 @@ impl Database {
     }
 
 
-
-// =================================================================================
+    // =================================================================================
     /// 创建一个新的 Banner
 
     pub fn create_banner(&self, image_url: &str, link_url: &str) -> Result<i64> {

@@ -12,6 +12,7 @@ mod gntx_sync;
 mod course;
 mod payment;
 mod banner;
+mod mission;
 
 use actix_web::{web, App, HttpServer};
 use dotenv::dotenv;
@@ -147,6 +148,12 @@ async fn main() -> std::io::Result<()> {
                     .service(course::get_all_courses_for_user) 
                     .service(course::get_my_courses)
 
+            )
+            .service(
+                web::scope("/api/mission")
+                    .service(mission::get_tasks)
+                    .service(mission::claim_reward)
+                    .service(mission::report_action)
             )
             .service(
                 web::scope("/api/admin")

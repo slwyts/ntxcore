@@ -24,3 +24,8 @@ tokio = { version = "1.47.0", features = ["full"] }
 ethers = "2.0.14"
 #ethers = { version = "2", features = ["abigen", "ws", "tokio-runtime"] }
 anyhow = "1"
+
+[profile.dev]
+debug = 0
+split-debuginfo = "unpacked"
+opt-level = 0
