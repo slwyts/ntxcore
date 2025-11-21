@@ -13,6 +13,7 @@ mod course;
 mod payment;
 mod banner;
 mod mission;
+mod email;
 
 use actix_web::{web, App, HttpServer};
 use dotenv::dotenv;
@@ -191,14 +192,14 @@ async fn main() -> std::io::Result<()> {
                     .service(admin::publish_article) // 发布文章
                     .service(admin::modify_article) // 修改文章
                     .service(admin::delete_article) // 删除文章
-                    .service(admin::get_all_articles_admin) // 
+                    .service(admin::get_all_articles_admin) //
                     .service(admin::get_article_detail_admin) // 管理员获取文章详情
                     .service(admin::get_all_referral_relationships_admin) // 获取所有推荐关系
                     .service(admin::get_all_commissions_admin) // 获取所有佣金记录
                     .service(admin::get_commissions_summary_by_inviter_admin) // 按邀请人汇总佣金数据
                     .service(admin::get_financial_summary_admin) // 获取财务汇总信息
                     .service(admin::update_ntx_control_percentage)// 新增：更新NTX分配控制的目标百分比
-                    
+
                     .service(admin::get_all_kols_admin)
                     .service(admin::upsert_kol_admin)
                     .service(admin::delete_kol_admin)
@@ -212,7 +213,7 @@ async fn main() -> std::io::Result<()> {
                     // === 新增课程和支付管理API ===
                     .service(payment::get_all_orders_admin)     // 查看所有订单
                     .service(payment::confirm_order_payment)    // 确认订单 (已有)
-                    
+
                     .service(course::get_all_permission_groups_admin) // 查看所有权限组
                     .service(course::create_permission_group)   // 创建权限组 (已有)
                     .service(course::update_permission_group)   // 更新权限组
@@ -243,6 +244,16 @@ async fn main() -> std::io::Result<()> {
                     .service(admin::update_task_admin)
                     .service(admin::delete_task_admin)
                     .service(admin::get_all_tasks_admin)
+
+                    // === 邮件系统 API ===
+                    .service(email::create_template)
+                    .service(email::get_all_templates)
+                    .service(email::get_template_by_id)
+                    .service(email::update_template)
+                    .service(email::delete_template)
+                    .service(email::create_task)
+                    .service(email::get_all_tasks)
+                    .service(email::get_task_by_id)
             )
             .service(
                 web::scope("/api/system")

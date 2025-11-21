@@ -420,6 +420,58 @@ impl Database {
             [],
         )?;
 
+        // 邮件模板表
+        conn.execute(
+            r#"
+            CREATE TABLE IF NOT EXISTS email_templates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                subject TEXT NOT NULL,
+                html_content TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+                updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+            )
+            "#,
+            [],
+        )?;
+
+        // 邮件发送任务表
+        conn.execute(
+            r#"
+            CREATE TABLE IF NOT EXISTS email_tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                template_id INTEGER NOT NULL,
+                variables TEXT NOT NULL,
+                recipients TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+                started_at TEXT,
+                completed_at TEXT,
+                total_count INTEGER NOT NULL DEFAULT 0,
+                success_count INTEGER NOT NULL DEFAULT 0,
+                failed_count INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (template_id) REFERENCES email_templates(id)
+            )
+            "#,
+            [],
+        )?;
+
+        // 邮件发送日志表
+        conn.execute(
+            r#"
+            CREATE TABLE IF NOT EXISTS email_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id INTEGER NOT NULL,
+                recipient TEXT NOT NULL,
+                status TEXT NOT NULL,
+                error_message TEXT,
+                sent_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+                FOREIGN KEY (task_id) REFERENCES email_tasks(id)
+            )
+            "#,
+            [],
+        )?;
+
 
 
         // 插入交易所数据
@@ -2816,6 +2868,201 @@ impl Database {
         }
         Ok(tasks)
     }
+
+    // =================================================================================
+    // 邮件系统相关函数
+    // =================================================================================
+
+    // --- 邮件模板操作 ---
+
+    /// 创建邮件模板
+    pub fn create_email_template(&self, name: &str, subject: &str, html_content: &str) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO email_templates (name, subject, html_content) VALUES (?, ?, ?)",
+            params![name, subject, html_content],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// 获取所有邮件模板
+    pub fn get_all_email_templates(&self) -> Result<Vec<EmailTemplate>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id, name, subject, html_content, created_at, updated_at FROM email_templates ORDER BY created_at DESC")?;
+        let templates = stmt.query_map([], |row| {
+            Ok(EmailTemplate {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                subject: row.get(2)?,
+                html_content: row.get(3)?,
+                created_at: row.get(4)?,
+                updated_at: row.get(5)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(templates)
+    }
+
+    /// 根据ID获取邮件模板
+    pub fn get_email_template_by_id(&self, id: i64) -> Result<Option<EmailTemplate>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id, name, subject, html_content, created_at, updated_at FROM email_templates WHERE id = ?")?;
+        stmt.query_row(params![id], |row| {
+            Ok(EmailTemplate {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                subject: row.get(2)?,
+                html_content: row.get(3)?,
+                created_at: row.get(4)?,
+                updated_at: row.get(5)?,
+            })
+        }).optional()
+    }
+
+    /// 更新邮件模板
+    pub fn update_email_template(&self, id: i64, name: &str, subject: &str, html_content: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let updated_at = Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE email_templates SET name = ?, subject = ?, html_content = ?, updated_at = ? WHERE id = ?",
+            params![name, subject, html_content, updated_at, id],
+        )?;
+        Ok(())
+    }
+
+    /// 删除邮件模板
+    pub fn delete_email_template(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM email_templates WHERE id = ?", params![id])?;
+        Ok(())
+    }
+
+    // --- 邮件任务操作 ---
+
+    /// 创建邮件发送任务
+    pub fn create_email_task(&self, template_id: i64, variables: &str, recipients: &str, total_count: i64) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO email_tasks (template_id, variables, recipients, total_count) VALUES (?, ?, ?, ?)",
+            params![template_id, variables, recipients, total_count],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// 获取所有邮件任务
+    pub fn get_all_email_tasks(&self) -> Result<Vec<EmailTask>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, template_id, variables, recipients, status, created_at, started_at, completed_at, total_count, success_count, failed_count FROM email_tasks ORDER BY created_at DESC"
+        )?;
+        let tasks = stmt.query_map([], |row| {
+            Ok(EmailTask {
+                id: row.get(0)?,
+                template_id: row.get(1)?,
+                variables: row.get(2)?,
+                recipients: row.get(3)?,
+                status: row.get(4)?,
+                created_at: row.get(5)?,
+                started_at: row.get(6)?,
+                completed_at: row.get(7)?,
+                total_count: row.get(8)?,
+                success_count: row.get(9)?,
+                failed_count: row.get(10)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(tasks)
+    }
+
+    /// 根据ID获取邮件任务
+    pub fn get_email_task_by_id(&self, id: i64) -> Result<Option<EmailTask>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, template_id, variables, recipients, status, created_at, started_at, completed_at, total_count, success_count, failed_count FROM email_tasks WHERE id = ?"
+        )?;
+        stmt.query_row(params![id], |row| {
+            Ok(EmailTask {
+                id: row.get(0)?,
+                template_id: row.get(1)?,
+                variables: row.get(2)?,
+                recipients: row.get(3)?,
+                status: row.get(4)?,
+                created_at: row.get(5)?,
+                started_at: row.get(6)?,
+                completed_at: row.get(7)?,
+                total_count: row.get(8)?,
+                success_count: row.get(9)?,
+                failed_count: row.get(10)?,
+            })
+        }).optional()
+    }
+
+    /// 更新任务状态
+    pub fn update_email_task_status(&self, id: i64, status: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = Utc::now().to_rfc3339();
+
+        match status {
+            "processing" => {
+                conn.execute(
+                    "UPDATE email_tasks SET status = ?, started_at = ? WHERE id = ?",
+                    params![status, now, id],
+                )?;
+            },
+            "completed" | "failed" => {
+                conn.execute(
+                    "UPDATE email_tasks SET status = ?, completed_at = ? WHERE id = ?",
+                    params![status, now, id],
+                )?;
+            },
+            _ => {
+                conn.execute(
+                    "UPDATE email_tasks SET status = ? WHERE id = ?",
+                    params![status, id],
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// 更新任务发送计数
+    pub fn update_email_task_counts(&self, id: i64, success_count: i64, failed_count: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE email_tasks SET success_count = ?, failed_count = ? WHERE id = ?",
+            params![success_count, failed_count, id],
+        )?;
+        Ok(())
+    }
+
+    // --- 邮件日志操作 ---
+
+    /// 创建邮件发送日志
+    pub fn create_email_log(&self, task_id: i64, recipient: &str, status: &str, error_message: Option<&str>) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO email_logs (task_id, recipient, status, error_message) VALUES (?, ?, ?, ?)",
+            params![task_id, recipient, status, error_message],
+        )?;
+        Ok(())
+    }
+
+    /// 获取任务的所有日志
+    pub fn get_email_logs_by_task(&self, task_id: i64) -> Result<Vec<EmailLog>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, task_id, recipient, status, error_message, sent_at FROM email_logs WHERE task_id = ? ORDER BY sent_at DESC"
+        )?;
+        let logs = stmt.query_map(params![task_id], |row| {
+            Ok(EmailLog {
+                id: row.get(0)?,
+                task_id: row.get(1)?,
+                recipient: row.get(2)?,
+                status: row.get(3)?,
+                error_message: row.get(4)?,
+                sent_at: row.get(5)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(logs)
+    }
 }
 
 //struct
@@ -3297,4 +3544,55 @@ pub struct Task {
     pub is_active: bool,
     #[serde(rename = "createdAt")]
     pub created_at: String,
+}
+
+// 邮件模板结构体
+#[derive(Debug, Serialize)]
+pub struct EmailTemplate {
+    pub id: i64,
+    pub name: String,
+    pub subject: String,
+    #[serde(rename = "htmlContent")]
+    pub html_content: String,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: String,
+}
+
+// 邮件任务结构体
+#[derive(Debug, Serialize)]
+pub struct EmailTask {
+    pub id: i64,
+    #[serde(rename = "templateId")]
+    pub template_id: i64,
+    pub variables: String,
+    pub recipients: String,
+    pub status: String,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
+    #[serde(rename = "startedAt")]
+    pub started_at: Option<String>,
+    #[serde(rename = "completedAt")]
+    pub completed_at: Option<String>,
+    #[serde(rename = "totalCount")]
+    pub total_count: i64,
+    #[serde(rename = "successCount")]
+    pub success_count: i64,
+    #[serde(rename = "failedCount")]
+    pub failed_count: i64,
+}
+
+// 邮件发送日志结构体
+#[derive(Debug, Serialize)]
+pub struct EmailLog {
+    pub id: i64,
+    #[serde(rename = "taskId")]
+    pub task_id: i64,
+    pub recipient: String,
+    pub status: String,
+    #[serde(rename = "errorMessage")]
+    pub error_message: Option<String>,
+    #[serde(rename = "sentAt")]
+    pub sent_at: String,
 }
