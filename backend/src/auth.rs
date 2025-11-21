@@ -292,7 +292,7 @@ pub async fn send_verification_code(
     let creds = Credentials::new(mail_config.user.clone(), mail_config.pass.clone());
 
     // 最佳实践是可能的话一次性构建邮件发送器，或者健壮地处理错误
-    let mailer = match SmtpTransport::relay("smtp.gmail.com") {
+    let mailer = match SmtpTransport::relay(&mail_config.host) {
         Ok(relay) => relay.credentials(creds).build(),
         Err(e) => {
             eprintln!("API Error: /api/auth/send_verification_code - Failed to create SMTP relay: {:?}", e);
@@ -374,7 +374,7 @@ pub async fn forgot_password(
 
     let creds = Credentials::new(mail_config.user.clone(), mail_config.pass.clone());
 
-    let mailer = match SmtpTransport::relay("smtp.gmail.com") {
+    let mailer = match SmtpTransport::relay(&mail_config.host) {
         Ok(relay) => relay.credentials(creds).build(),
         Err(e) => {
             eprintln!("API Error: /api/auth/forgot_password - Failed to create SMTP relay: {:?}", e);

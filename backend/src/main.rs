@@ -33,6 +33,7 @@ pub struct JwtConfig {
 pub struct MailConfig {
     pub user: String,
     pub pass: String,
+    pub host: String,
 }
 
 
@@ -49,6 +50,7 @@ async fn main() -> std::io::Result<()> {
     let jwt_secret = env::var("JWT_SECRET").expect("JWT_SECRET 环境变量未设置");
     let mail_user = env::var("MAIL_USER").expect("MAIL_USER 环境变量未设置");
     let mail_pass = env::var("MAIL_PASS").expect("MAIL_PASS 环境变量未设置");
+    let mail_host = env::var("MAIL_HOST").unwrap_or_else(|_| "smtp.gmail.com".to_string());
     let key = env::var ("KEY").expect("system KEY is not set");
     env::var("PAYMENT_RECEIVING_ADDRESS").expect("PAYMENT_RECEIVING_ADDRESS 环境变量未设置");
 
@@ -66,6 +68,7 @@ async fn main() -> std::io::Result<()> {
     let mail_config = web::Data::new(MailConfig {
         user: mail_user,
         pass: mail_pass,
+        host: mail_host,
     });
     let jwt_config = web::Data::new(JwtConfig {
         secret: jwt_secret,
