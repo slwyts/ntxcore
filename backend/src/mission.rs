@@ -303,14 +303,12 @@ fn check_task_completion(conn: &rusqlite::Connection, user_id: i64, task: &Task,
             }
         },
         "REFERRAL_COUNT" => {
-            // 检查 users 表 inviteBy
-            let _user_email: String = conn.query_row("SELECT email FROM users WHERE id = ?", params![user_id], |row| row.get(0)).unwrap_or_default();
-            // 获取邀请码
-            let invite_code: String = conn.query_row("SELECT inviteCode FROM users WHERE id = ?", params![user_id], |row| row.get(0)).unwrap_or_default();
+            // 获取用户邮箱
+            let user_email: String = conn.query_row("SELECT email FROM users WHERE id = ?", params![user_id], |row| row.get(0)).unwrap_or_default();
             
             let count: i64 = conn.query_row(
                 "SELECT COUNT(*) FROM users WHERE inviteBy = ?",
-                params![invite_code],
+                params![user_email],
                 |row| row.get(0)
             ).unwrap_or(0);
 
@@ -321,15 +319,7 @@ fn check_task_completion(conn: &rusqlite::Connection, user_id: i64, task: &Task,
             }
         },
         "TEAM_SIZE" => {
-            // 需要计算团队人数，比较复杂，这里简化处理，或者复用 db.rs 中的逻辑
-            // 由于这里不能直接调用 async 的 get_community_users，我们需要一个同步版本或者直接 SQL
-            // 简单起见，我们只计算直接邀请，或者需要实现递归查询
-            // 鉴于性能，这里暂时只计算直接邀请，或者假设有一个字段存储了团队人数
-            // 实际上，get_community_users 是递归的。
-            // 为了不阻塞，这里可以暂时返回 IN_PROGRESS，由定时任务更新，或者简化为直接邀请
-            // 但需求是 "社群用户（裂变）总人数"
-            
-            // 我们可以调用一个同步的 helper function 来计算
+            // 计算团队总人数（包含所有裂变层级）
             let team_size = calculate_team_size(conn, user_id);
             if team_size >= task.condition_value {
                 ("COMPLETED".to_string(), team_size)
@@ -354,19 +344,19 @@ fn check_task_completion(conn: &rusqlite::Connection, user_id: i64, task: &Task,
             }
 
             // 2. 检查直推下级
-            // 获取邀请码
-            let invite_code: Option<String> = conn.query_row(
-                "SELECT inviteCode FROM users WHERE id = ?",
+            // 获取用户邮箱
+            let user_email: Option<String> = conn.query_row(
+                "SELECT email FROM users WHERE id = ?",
                 params![user_id],
                 |row| row.get(0)
             ).optional().unwrap_or(None);
 
-            if let Some(code) = invite_code {
+            if let Some(email) = user_email {
                 let sub_trade_count: i64 = conn.query_row(
                     "SELECT COUNT(*) FROM daily_user_trades dt
                      JOIN users u ON dt.user_id = u.id
                      WHERE u.inviteBy = ? AND dt.trade_date = ?",
-                    params![code, yesterday],
+                    params![email, yesterday],
                     |row| row.get(0)
                 ).unwrap_or(0);
 
@@ -384,26 +374,26 @@ fn check_task_completion(conn: &rusqlite::Connection, user_id: i64, task: &Task,
 }
 
 fn calculate_team_size(conn: &rusqlite::Connection, user_id: i64) -> i64 {
-    // 获取用户邀请码
-    let invite_code: Option<String> = conn.query_row(
-        "SELECT inviteCode FROM users WHERE id = ?",
+    // 获取用户邮箱
+    let user_email: Option<String> = conn.query_row(
+        "SELECT email FROM users WHERE id = ?",
         params![user_id],
         |row| row.get(0)
     ).optional().unwrap_or(None);
 
-    if let Some(code) = invite_code {
-        // 这是一个简化的递归查询，只查一层。真正的裂变需要递归。
-        // SQLite 支持 WITH RECURSIVE
+    if let Some(email) = user_email {
+        // 使用递归查询 (CTE) 计算所有下级（无限层级裂变）
+        // 注意：inviteBy 存储的是邀请人的邮箱
         let query = "
             WITH RECURSIVE subordinates AS (
-                SELECT id, inviteCode FROM users WHERE inviteBy = ?
+                SELECT id, email FROM users WHERE inviteBy = ?
                 UNION ALL
-                SELECT u.id, u.inviteCode FROM users u
-                INNER JOIN subordinates s ON u.inviteBy = s.inviteCode
+                SELECT u.id, u.email FROM users u
+                INNER JOIN subordinates s ON u.inviteBy = s.email
             )
             SELECT COUNT(*) FROM subordinates;
         ";
-        conn.query_row(query, params![code], |row| row.get(0)).unwrap_or(0)
+        conn.query_row(query, params![email], |row| row.get(0)).unwrap_or(0)
     } else {
         0
     }
