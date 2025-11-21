@@ -236,6 +236,10 @@ async fn main() -> std::io::Result<()> {
                     .service(banner::get_all_banners_admin)
                     .service(banner::update_banner)
                     .service(banner::delete_banner)
+                    .service(admin::create_task_admin)
+                    .service(admin::update_task_admin)
+                    .service(admin::delete_task_admin)
+                    .service(admin::get_all_tasks_admin)
             )
             .service(
                 web::scope("/api/system")

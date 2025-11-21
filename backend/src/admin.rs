@@ -1395,3 +1395,71 @@ pub async fn revoke_permission_admin(db: web::Data<Database>, path: web::Path<i6
         Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({"error": e.to_string()})),
     }
 }
+
+// --- 任务管理 ---
+
+#[derive(Deserialize)]
+pub struct CreateTaskRequest {
+    pub name: String,
+    pub description: String,
+    #[serde(rename = "rewardAmount")]
+    pub reward_amount: f64,
+    #[serde(rename = "taskType")]
+    pub task_type: String,
+    #[serde(rename = "conditionValue")]
+    pub condition_value: i64,
+    #[serde(rename = "isDaily")]
+    pub is_daily: bool,
+    #[serde(rename = "isActive")]
+    pub is_active: bool,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateTaskRequest {
+    pub name: String,
+    pub description: String,
+    #[serde(rename = "rewardAmount")]
+    pub reward_amount: f64,
+    #[serde(rename = "taskType")]
+    pub task_type: String,
+    #[serde(rename = "conditionValue")]
+    pub condition_value: i64,
+    #[serde(rename = "isDaily")]
+    pub is_daily: bool,
+    #[serde(rename = "isActive")]
+    pub is_active: bool,
+}
+
+#[post("/tasks")]
+pub async fn create_task_admin(db: web::Data<Database>, req: web::Json<CreateTaskRequest>) -> impl Responder {
+    match db.create_task(&req.name, &req.description, req.reward_amount, &req.task_type, req.condition_value, req.is_daily, req.is_active) {
+        Ok(id) => HttpResponse::Ok().json(serde_json::json!({"message": "任务创建成功", "id": id})),
+        Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({"error": e.to_string()})),
+    }
+}
+
+#[put("/tasks/{id}")]
+pub async fn update_task_admin(db: web::Data<Database>, path: web::Path<i64>, req: web::Json<UpdateTaskRequest>) -> impl Responder {
+    let id = path.into_inner();
+    match db.update_task(id, &req.name, &req.description, req.reward_amount, &req.task_type, req.condition_value, req.is_daily, req.is_active) {
+        Ok(_) => HttpResponse::Ok().json(serde_json::json!({"message": "任务更新成功"})),
+        Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({"error": e.to_string()})),
+    }
+}
+
+#[delete("/tasks/{id}")]
+pub async fn delete_task_admin(db: web::Data<Database>, path: web::Path<i64>) -> impl Responder {
+    let id = path.into_inner();
+    match db.delete_task(id) {
+        Ok(_) => HttpResponse::Ok().json(serde_json::json!({"message": "任务删除成功"})),
+        Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({"error": e.to_string()})),
+    }
+}
+
+#[get("/tasks")]
+pub async fn get_all_tasks_admin(db: web::Data<Database>) -> impl Responder {
+    match db.get_all_tasks_admin() {
+        Ok(tasks) => HttpResponse::Ok().json(tasks),
+        Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({"error": e.to_string()})),
+    }
+}

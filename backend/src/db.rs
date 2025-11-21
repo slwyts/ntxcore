@@ -2747,8 +2747,64 @@ impl Database {
         Ok(logs)
     }
 
-}
+    // 任务管理 (Admin)
 
+    // 创建任务
+    pub fn create_task(&self, name: &str, description: &str, reward_amount: f64, task_type: &str, condition_value: i64, is_daily: bool, is_active: bool) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO tasks (name, description, reward_amount, task_type, condition_value, is_daily, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            params![name, description, reward_amount, task_type, condition_value, is_daily, is_active],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    // 更新任务
+    pub fn update_task(&self, id: i64, name: &str, description: &str, reward_amount: f64, task_type: &str, condition_value: i64, is_daily: bool, is_active: bool) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE tasks SET name = ?, description = ?, reward_amount = ?, task_type = ?, condition_value = ?, is_daily = ?, is_active = ? WHERE id = ?",
+            params![name, description, reward_amount, task_type, condition_value, is_daily, is_active, id],
+        )?;
+        Ok(())
+    }
+
+    // 删除任务
+    pub fn delete_task(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        // 注意：如果有外键约束，可能需要先删除 user_task_progress 中的相关记录
+        // 这里假设 SQLite 配置了 ON DELETE CASCADE 或者手动删除
+        // 为了安全起见，先手动删除关联进度
+        conn.execute("DELETE FROM user_task_progress WHERE task_id = ?", params![id])?;
+        conn.execute("DELETE FROM tasks WHERE id = ?", params![id])?;
+        Ok(())
+    }
+
+    // 获取所有任务 (Admin)
+    pub fn get_all_tasks_admin(&self) -> Result<Vec<Task>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id, name, description, reward_amount, task_type, condition_value, is_daily, is_active, created_at FROM tasks")?;
+        let tasks_iter = stmt.query_map([], |row| {
+            Ok(Task {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                reward_amount: row.get(3)?,
+                task_type: row.get(4)?,
+                condition_value: row.get(5)?,
+                is_daily: row.get(6)?,
+                is_active: row.get(7)?,
+                created_at: row.get(8)?,
+            })
+        })?;
+
+        let mut tasks = Vec::new();
+        for task in tasks_iter {
+            tasks.push(task?);
+        }
+        Ok(tasks)
+    }
+}
 
 //struct
 #[derive(Debug, Serialize)]
@@ -3209,5 +3265,24 @@ pub struct ManualTradeDataLog {
     pub trade_volume_usdt: f64,
     pub fee_usdt: f64,
     pub trade_date: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct Task {
+    pub id: i64,
+    pub name: String,
+    pub description: String,
+    #[serde(rename = "rewardAmount")]
+    pub reward_amount: f64,
+    #[serde(rename = "taskType")]
+    pub task_type: String,
+    #[serde(rename = "conditionValue")]
+    pub condition_value: i64,
+    #[serde(rename = "isDaily")]
+    pub is_daily: bool,
+    #[serde(rename = "isActive")]
+    pub is_active: bool,
+    #[serde(rename = "createdAt")]
     pub created_at: String,
 }
