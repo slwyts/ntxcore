@@ -467,11 +467,23 @@ impl Database {
         ];
 
         for (name, desc, reward, t_type, cond, is_daily) in tasks {
-            let exists: bool = conn.query_row(
-                "SELECT EXISTS(SELECT 1 FROM tasks WHERE task_type = ? AND condition_value = ?)",
-                params![t_type, cond],
-                |row| row.get(0)
-            ).unwrap_or(false);
+            // 对于一次性/单例任务，只检查类型是否存在，忽略 condition_value
+            let singleton_types = vec!["REGISTER", "BIND_EXCHANGE", "DAILY_LIVE", "DAILY_SHARE", "TRADE_ACTIVITY"];
+            
+            let exists: bool = if singleton_types.contains(&t_type) {
+                conn.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM tasks WHERE task_type = ?)",
+                    params![t_type],
+                    |row| row.get(0)
+                ).unwrap_or(false)
+            } else {
+                // 对于累积型任务（如邀请人数），允许存在多个不同门槛的任务
+                conn.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM tasks WHERE task_type = ? AND condition_value = ?)",
+                    params![t_type, cond],
+                    |row| row.get(0)
+                ).unwrap_or(false)
+            };
 
             if !exists {
                 conn.execute(
