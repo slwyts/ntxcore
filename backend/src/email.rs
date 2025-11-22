@@ -64,20 +64,18 @@ async fn send_single_email(
     subject: &str,
     html_content: &str,
 ) -> Result<(), String> {
-    // 创建邮件
+    // 创建邮件（明确设置UTF-8编码）
     let email = Message::builder()
         .from(mail_config.user.parse().map_err(|e| format!("Invalid sender email: {}", e))?)
         .to(recipient.parse().map_err(|e| format!("Invalid recipient email: {}", e))?)
         .subject(subject)
-        .multipart(
-            MultiPart::alternative()
-                .singlepart(SinglePart::html(html_content.to_string()))
-        )
+        .header(lettre::message::header::ContentType::parse("text/html; charset=utf-8").unwrap())
+        .body(html_content.to_string())
         .map_err(|e| format!("Failed to build email: {}", e))?;
 
-    // 创建SMTP传输
+    // 创建SMTP传输 - Gmail需要STARTTLS
     let creds = Credentials::new(mail_config.user.clone(), mail_config.pass.clone());
-    let mailer = SmtpTransport::relay(&mail_config.host)
+    let mailer = SmtpTransport::starttls_relay(&mail_config.host)
         .map_err(|e| format!("Failed to create SMTP transport: {}", e))?
         .credentials(creds)
         .build();
@@ -198,7 +196,7 @@ async fn execute_email_task(
 // ============================================================================
 
 /// 创建邮件模板
-#[post("/templates")]
+#[post("/email/templates")]
 pub async fn create_template(
     db: web::Data<Database>,
     req: web::Json<CreateTemplateRequest>,
@@ -222,7 +220,7 @@ pub async fn create_template(
 }
 
 /// 获取所有邮件模板
-#[get("/templates")]
+#[get("/email/templates")]
 pub async fn get_all_templates(
     db: web::Data<Database>,
 ) -> impl Responder {
@@ -240,7 +238,7 @@ pub async fn get_all_templates(
 }
 
 /// 获取单个邮件模板
-#[get("/templates/{id}")]
+#[get("/email/templates/{id}")]
 pub async fn get_template_by_id(
     db: web::Data<Database>,
     path: web::Path<i64>,
@@ -263,7 +261,7 @@ pub async fn get_template_by_id(
 }
 
 /// 更新邮件模板
-#[put("/templates/{id}")]
+#[put("/email/templates/{id}")]
 pub async fn update_template(
     db: web::Data<Database>,
     path: web::Path<i64>,
@@ -286,7 +284,7 @@ pub async fn update_template(
 }
 
 /// 删除邮件模板
-#[delete("/templates/{id}")]
+#[delete("/email/templates/{id}")]
 pub async fn delete_template(
     db: web::Data<Database>,
     path: web::Path<i64>,
@@ -312,7 +310,7 @@ pub async fn delete_template(
 // ============================================================================
 
 /// 创建邮件发送任务
-#[post("/tasks")]
+#[post("/email/tasks")]
 pub async fn create_task(
     db: web::Data<Database>,
     mail_config: web::Data<MailConfig>,
@@ -382,7 +380,7 @@ pub async fn create_task(
 }
 
 /// 获取所有邮件任务
-#[get("/tasks")]
+#[get("/email/tasks")]
 pub async fn get_all_tasks(
     db: web::Data<Database>,
 ) -> impl Responder {
@@ -400,7 +398,7 @@ pub async fn get_all_tasks(
 }
 
 /// 获取单个邮件任务详情（包含日志）
-#[get("/tasks/{id}")]
+#[get("/email/tasks/{id}")]
 pub async fn get_task_by_id(
     db: web::Data<Database>,
     path: web::Path<i64>,
