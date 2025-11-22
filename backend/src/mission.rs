@@ -292,7 +292,7 @@ fn check_task_completion(conn: &rusqlite::Connection, user_id: i64, task: &Task,
         "BIND_EXCHANGE" => {
             // 检查 user_exchanges 表
             let count: i64 = conn.query_row(
-                "SELECT COUNT(*) FROM user_exchanges WHERE user_id = ?",
+                "SELECT COUNT(*) FROM user_exchanges WHERE userId = ? AND isBound = 1",
                 params![user_id],
                 |row| row.get(0)
             ).unwrap_or(0);

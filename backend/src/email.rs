@@ -64,13 +64,17 @@ async fn send_single_email(
     subject: &str,
     html_content: &str,
 ) -> Result<(), String> {
-    // 创建邮件（明确设置UTF-8编码）
+    // 创建邮件（使用MultiPart确保UTF-8编码，使用Base64传输）
+    let html_part = SinglePart::builder()
+        .header(lettre::message::header::ContentType::parse("text/html; charset=utf-8").unwrap())
+        .header(lettre::message::header::ContentTransferEncoding::Base64)
+        .body(html_content.to_string());
+    
     let email = Message::builder()
         .from(mail_config.user.parse().map_err(|e| format!("Invalid sender email: {}", e))?)
         .to(recipient.parse().map_err(|e| format!("Invalid recipient email: {}", e))?)
         .subject(subject)
-        .header(lettre::message::header::ContentType::parse("text/html; charset=utf-8").unwrap())
-        .body(html_content.to_string())
+        .multipart(MultiPart::alternative().singlepart(html_part))
         .map_err(|e| format!("Failed to build email: {}", e))?;
 
     // 创建SMTP传输 - Gmail需要STARTTLS
@@ -202,6 +206,7 @@ pub async fn create_template(
     req: web::Json<CreateTemplateRequest>,
 ) -> impl Responder {
     println!("API Call: POST /api/admin/email/templates");
+    println!("Received template content: name={}, subject={}", req.name, req.subject);
 
     let template_id = match db.create_email_template(&req.name, &req.subject, &req.html_content) {
         Ok(id) => id,
