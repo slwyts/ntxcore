@@ -254,6 +254,12 @@ async fn main() -> std::io::Result<()> {
                     .service(email::create_task)
                     .service(email::get_all_tasks)
                     .service(email::get_task_by_id)
+                    // === 邮件收件人分组 API ===
+                    .service(email::create_recipient_group)
+                    .service(email::get_all_recipient_groups)
+                    .service(email::get_recipient_group_by_id)
+                    .service(email::update_recipient_group)
+                    .service(email::delete_recipient_group)
             )
             .service(
                 web::scope("/api/system")

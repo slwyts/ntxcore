@@ -472,7 +472,20 @@ impl Database {
             [],
         )?;
 
-
+        // 邮件收件人分组表
+        conn.execute(
+            r#"
+            CREATE TABLE IF NOT EXISTS email_recipient_groups (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                description TEXT,
+                user_emails TEXT NOT NULL DEFAULT '[]',
+                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+                updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+            )
+            "#,
+            [],
+        )?;
 
         // 插入交易所数据
         let exchanges = vec![
@@ -3063,8 +3076,80 @@ impl Database {
         })?.collect::<Result<Vec<_>, _>>()?;
         Ok(logs)
     }
-}
 
+    // --- 邮件收件人分组操作 ---
+
+    /// 创建收件人分组
+    pub fn create_email_recipient_group(&self, name: &str, description: Option<&str>, user_emails: &[String]) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        let emails_json = serde_json::to_string(user_emails).unwrap_or_else(|_| "[]".to_string());
+        conn.execute(
+            "INSERT INTO email_recipient_groups (name, description, user_emails) VALUES (?, ?, ?)",
+            params![name, description, emails_json],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// 获取所有收件人分组
+    pub fn get_all_email_recipient_groups(&self) -> Result<Vec<EmailRecipientGroup>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, description, user_emails, created_at, updated_at FROM email_recipient_groups ORDER BY created_at DESC"
+        )?;
+        let groups = stmt.query_map([], |row| {
+            let emails_json: String = row.get(3)?;
+            let user_emails: Vec<String> = serde_json::from_str(&emails_json).unwrap_or_default();
+            Ok(EmailRecipientGroup {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                user_emails,
+                created_at: row.get(4)?,
+                updated_at: row.get(5)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(groups)
+    }
+
+    /// 根据ID获取收件人分组
+    pub fn get_email_recipient_group_by_id(&self, id: i64) -> Result<Option<EmailRecipientGroup>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, description, user_emails, created_at, updated_at FROM email_recipient_groups WHERE id = ?"
+        )?;
+        stmt.query_row(params![id], |row| {
+            let emails_json: String = row.get(3)?;
+            let user_emails: Vec<String> = serde_json::from_str(&emails_json).unwrap_or_default();
+            Ok(EmailRecipientGroup {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                user_emails,
+                created_at: row.get(4)?,
+                updated_at: row.get(5)?,
+            })
+        }).optional()
+    }
+
+    /// 更新收件人分组
+    pub fn update_email_recipient_group(&self, id: i64, name: &str, description: Option<&str>, user_emails: &[String]) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let emails_json = serde_json::to_string(user_emails).unwrap_or_else(|_| "[]".to_string());
+        let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+        conn.execute(
+            "UPDATE email_recipient_groups SET name = ?, description = ?, user_emails = ?, updated_at = ? WHERE id = ?",
+            params![name, description, emails_json, now, id],
+        )?;
+        Ok(())
+    }
+
+    /// 删除收件人分组
+    pub fn delete_email_recipient_group(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM email_recipient_groups WHERE id = ?", params![id])?;
+        Ok(())
+    }
+}
 //struct
 #[derive(Debug, Serialize)]
 pub struct ExchangeInfo {
@@ -3595,4 +3680,18 @@ pub struct EmailLog {
     pub error_message: Option<String>,
     #[serde(rename = "sentAt")]
     pub sent_at: String,
+}
+
+// 邮件收件人分组结构体
+#[derive(Debug, Serialize)]
+pub struct EmailRecipientGroup {
+    pub id: i64,
+    pub name: String,
+    pub description: Option<String>,
+    #[serde(rename = "userEmails")]
+    pub user_emails: Vec<String>,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: String,
 }

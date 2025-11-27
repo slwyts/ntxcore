@@ -1630,6 +1630,17 @@
               <!-- 收件人选择 -->
               <div class="form-group" style="margin-top: 25px;">
                 <h3 style="margin-bottom: 15px;">选择收件人</h3>
+                <!-- 分组快速选择 -->
+                <div style="margin-bottom: 15px; padding: 10px; background: #f9f9f9; border-radius: 4px;">
+                  <label style="font-weight: bold; margin-bottom: 8px; display: block;">从分组导入:</label>
+                  <div style="display: flex; gap: 10px; align-items: center;">
+                    <select id="recipient-group-select" style="flex: 1; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px;">
+                      <option value="">-- 选择分组快速导入 --</option>
+                    </select>
+                    <button type="button" class="btn btn-primary" id="import-from-group-btn">导入分组</button>
+                    <button type="button" class="btn btn-success" id="save-to-group-btn">保存当前选中为分组</button>
+                  </div>
+                </div>
                 <div style="margin-bottom: 10px; display: flex; gap: 10px; align-items: center;">
                   <input type="text" id="recipient-search" placeholder="搜索用户 (昵称/邮箱)"
                     style="flex: 1; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px;">
@@ -1661,6 +1672,45 @@
             <div id="email-task-detail-content">
               <!-- 任务详情将通过JS加载 -->
             </div>
+          </div>
+        </div>
+
+        <!-- Recipient Group Modal -->
+        <div id="recipient-group-modal" class="modal">
+          <div class="modal-content" style="max-width: 800px;">
+            <span class="close-button" data-modal="recipient-group-modal">&times;</span>
+            <h2 id="recipient-group-modal-title">创建收件人分组</h2>
+            <form id="recipient-group-form">
+              <input type="hidden" id="recipient-group-id" />
+              <div class="form-group">
+                <label for="recipient-group-name">分组名称:</label>
+                <input type="text" id="recipient-group-name" class="form-control" required placeholder="例如：VIP用户、活跃用户等" />
+              </div>
+              <div class="form-group">
+                <label for="recipient-group-description">描述 (可选):</label>
+                <textarea id="recipient-group-description" class="form-control" rows="2" placeholder="描述这个分组的用途"></textarea>
+              </div>
+              <div class="form-group">
+                <label>选择用户:</label>
+                <div style="margin-bottom: 10px; display: flex; gap: 10px; align-items: center;">
+                  <input type="text" id="group-user-search" placeholder="搜索用户 (昵称/邮箱)"
+                    style="flex: 1; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px;">
+                  <button type="button" class="btn btn-secondary" id="group-select-all">全选</button>
+                  <button type="button" class="btn btn-secondary" id="group-deselect-all">取消全选</button>
+                </div>
+                <div style="border: 1px solid var(--border-color); border-radius: 4px; max-height: 300px; overflow-y: auto; padding: 10px;">
+                  <div id="group-users-list">
+                    <!-- 用户列表将通过JS加载 -->
+                  </div>
+                </div>
+                <small style="color: #666; margin-top: 5px; display: block;">
+                  已选择 <span id="group-selected-count">0</span> 个用户
+                </small>
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="btn btn-primary">保存分组</button>
+              </div>
+            </form>
           </div>
         </div>
 
@@ -1755,6 +1805,31 @@
         </section>
 
         <section id="email-management" class="content-area">
+          <!-- 收件人分组管理 -->
+          <div class="section">
+            <div class="header">
+              <h2>收件人分组</h2>
+              <button class="btn btn-success" id="create-recipient-group-btn">
+                <i class="fas fa-plus"></i> 创建新分组
+              </button>
+            </div>
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>分组名称</th>
+                  <th>描述</th>
+                  <th>用户数量</th>
+                  <th>更新时间</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="recipient-group-list-body">
+                <!-- 分组数据将通过JS加载 -->
+              </tbody>
+            </table>
+          </div>
+
           <!-- 邮件模板管理 -->
           <div class="section">
             <div class="header">
@@ -1814,7 +1889,7 @@
       // API Base URL
       //const API_BASE_URL = "https://api.ntxdao.com/api"; // Production API URL
     const API_BASE_URL = 'http://localhost:3333/api'; // Local development API URL
-      //const API_BASE_URL = 'https://forkapi.ntxdao.com/api'; // dev API URL
+      //const API_BASE_URL = 'https://forkdev.ntxdao.com/api'; // dev API URL
 
       // Pagination settings
       const ITEMS_PER_PAGE = 10;
@@ -1841,7 +1916,9 @@
       let allTasks = [];
       let allEmailTemplates = [];
       let allEmailTasks = [];
+      let allRecipientGroups = []; // 收件人分组
       let selectedRecipients = new Set(); // 维护选中的收件人邮箱
+      let selectedGroupUsers = new Set(); // 分组Modal中选中的用户
       // ====================================================================
       // Helper Functions
       // ====================================================================
@@ -3854,6 +3931,7 @@
                 loadTasks();
                 break;
               case "email-management":
+                loadRecipientGroups();
                 loadEmailTemplates();
                 loadEmailTasks();
                 break;
@@ -4287,6 +4365,237 @@
             renderEmailTasks(tasks);
           }
         }
+
+        // ==== 收件人分组管理 ====
+        async function loadRecipientGroups() {
+          const groups = await fetchData("/email/recipient-groups");
+          if (groups) {
+            allRecipientGroups = groups;
+            renderRecipientGroups(groups);
+            populateGroupSelect();
+          }
+        }
+
+        function renderRecipientGroups(groups) {
+          const tbody = document.getElementById("recipient-group-list-body");
+          tbody.innerHTML = "";
+          groups.forEach((group) => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+              <td>${group.id}</td>
+              <td>${escapeHtml(group.name)}</td>
+              <td>${escapeHtml(group.description || "-")}</td>
+              <td>${group.userEmails.length}</td>
+              <td>${formatDateTime(group.updatedAt)}</td>
+              <td>
+                <button class="btn btn-primary btn-sm" onclick="openRecipientGroupModal(${group.id})">编辑</button>
+                <button class="btn btn-danger btn-sm" onclick="deleteRecipientGroup(${group.id})">删除</button>
+              </td>
+            `;
+            tbody.appendChild(tr);
+          });
+        }
+
+        function populateGroupSelect() {
+          const select = document.getElementById("recipient-group-select");
+          if (!select) return;
+          select.innerHTML = '<option value="">-- 选择分组快速导入 --</option>';
+          allRecipientGroups.forEach((group) => {
+            const option = document.createElement("option");
+            option.value = group.id;
+            option.textContent = `${group.name} (${group.userEmails.length}人)`;
+            select.appendChild(option);
+          });
+        }
+
+        async function openRecipientGroupModal(groupId = null) {
+          selectedGroupUsers.clear();
+          document.getElementById("recipient-group-form").reset();
+          document.getElementById("recipient-group-id").value = groupId || "";
+          document.getElementById("recipient-group-modal-title").textContent = groupId ? "编辑收件人分组" : "创建收件人分组";
+
+          // 确保用户数据已加载
+          if (allUsers.length === 0) {
+            const users = await fetchData("/users");
+            if (users) {
+              allUsers = users;
+            }
+          }
+
+          // 渲染用户列表
+          renderGroupUsersList(allUsers);
+
+          if (groupId) {
+            const group = await fetchData(`/email/recipient-groups/${groupId}`);
+            if (group) {
+              document.getElementById("recipient-group-name").value = group.name;
+              document.getElementById("recipient-group-description").value = group.description || "";
+              // 设置选中的用户
+              group.userEmails.forEach(email => selectedGroupUsers.add(email));
+              renderGroupUsersList(allUsers);
+            }
+          }
+
+          document.getElementById("recipient-group-modal").style.display = "flex";
+        }
+
+        function renderGroupUsersList(users) {
+          const container = document.getElementById("group-users-list");
+          container.innerHTML = "";
+          users.forEach((user) => {
+            const label = document.createElement("label");
+            label.style.cssText = "display: block; padding: 8px; cursor: pointer; border-bottom: 1px solid #f0f0f0;";
+            const isChecked = selectedGroupUsers.has(user.email);
+            label.innerHTML = `
+              <input type="checkbox" class="group-user-checkbox" value="${user.email}" style="margin-right: 10px;" ${isChecked ? 'checked' : ''}>
+              <span style="font-weight: 500;">${escapeHtml(user.nickname)}</span>
+              <span style="color: #666; margin-left: 10px;">(${escapeHtml(user.email)})</span>
+            `;
+            const checkbox = label.querySelector('.group-user-checkbox');
+            checkbox.addEventListener("change", function() {
+              if (this.checked) {
+                selectedGroupUsers.add(this.value);
+              } else {
+                selectedGroupUsers.delete(this.value);
+              }
+              updateGroupSelectedCount();
+            });
+            container.appendChild(label);
+          });
+          updateGroupSelectedCount();
+        }
+
+        function updateGroupSelectedCount() {
+          document.getElementById("group-selected-count").textContent = selectedGroupUsers.size;
+        }
+
+        async function deleteRecipientGroup(groupId) {
+          const result = await Swal.fire({
+            title: "确认删除",
+            text: "删除后无法恢复，确定要删除这个分组吗？",
+            icon: "warning",
+            showCancelButton: true,
+            confirmButtonColor: "#d33",
+            confirmButtonText: "删除",
+            cancelButtonText: "取消",
+          });
+          if (result.isConfirmed) {
+            const res = await fetchData(`/email/recipient-groups/${groupId}`, "DELETE");
+            if (res) {
+              Swal.fire("已删除", "分组已被删除", "success");
+              loadRecipientGroups();
+            }
+          }
+        }
+
+        // 分组表单提交
+        document.getElementById("recipient-group-form").addEventListener("submit", async (event) => {
+          event.preventDefault();
+          const id = document.getElementById("recipient-group-id").value;
+          const payload = {
+            name: document.getElementById("recipient-group-name").value,
+            description: document.getElementById("recipient-group-description").value || null,
+            userEmails: Array.from(selectedGroupUsers),
+          };
+
+          if (payload.userEmails.length === 0) {
+            Swal.fire("错误", "请至少选择一个用户", "warning");
+            return;
+          }
+
+          const endpoint = id ? `/email/recipient-groups/${id}` : "/email/recipient-groups";
+          const method = id ? "PUT" : "POST";
+
+          const result = await fetchData(endpoint, method, payload);
+          if (result) {
+            Swal.fire("成功", id ? "分组更新成功" : "分组创建成功", "success");
+            document.getElementById("recipient-group-modal").style.display = "none";
+            loadRecipientGroups();
+          }
+        });
+
+        // 分组Modal用户搜索
+        document.getElementById("group-user-search").addEventListener("input", function() {
+          const query = this.value.toLowerCase();
+          const filteredUsers = allUsers.filter(user =>
+            user.nickname.toLowerCase().includes(query) ||
+            user.email.toLowerCase().includes(query)
+          );
+          renderGroupUsersList(filteredUsers);
+        });
+
+        // 分组全选/取消全选
+        document.getElementById("group-select-all").addEventListener("click", () => {
+          document.querySelectorAll(".group-user-checkbox").forEach(cb => {
+            cb.checked = true;
+            selectedGroupUsers.add(cb.value);
+          });
+          updateGroupSelectedCount();
+        });
+
+        document.getElementById("group-deselect-all").addEventListener("click", () => {
+          document.querySelectorAll(".group-user-checkbox").forEach(cb => {
+            cb.checked = false;
+            selectedGroupUsers.delete(cb.value);
+          });
+          updateGroupSelectedCount();
+        });
+
+        // 创建分组按钮
+        document.getElementById("create-recipient-group-btn").addEventListener("click", () => {
+          openRecipientGroupModal();
+        });
+
+        // 从分组导入收件人
+        document.getElementById("import-from-group-btn").addEventListener("click", () => {
+          const groupId = document.getElementById("recipient-group-select").value;
+          if (!groupId) {
+            Swal.fire("提示", "请先选择一个分组", "info");
+            return;
+          }
+          const group = allRecipientGroups.find(g => g.id == groupId);
+          if (group) {
+            group.userEmails.forEach(email => selectedRecipients.add(email));
+            renderRecipientsList(allUsers);
+            Swal.fire("成功", `已导入 ${group.userEmails.length} 个收件人`, "success");
+          }
+        });
+
+        // 保存当前选中为分组
+        document.getElementById("save-to-group-btn").addEventListener("click", async () => {
+          if (selectedRecipients.size === 0) {
+            Swal.fire("提示", "请先选择一些收件人", "info");
+            return;
+          }
+          const { value: groupName } = await Swal.fire({
+            title: "保存为分组",
+            input: "text",
+            inputLabel: "请输入分组名称",
+            inputPlaceholder: "例如：VIP用户",
+            showCancelButton: true,
+            confirmButtonText: "保存",
+            cancelButtonText: "取消",
+            inputValidator: (value) => {
+              if (!value) return "请输入分组名称";
+            }
+          });
+          if (groupName) {
+            const payload = {
+              name: groupName,
+              description: null,
+              userEmails: Array.from(selectedRecipients),
+            };
+            const result = await fetchData("/email/recipient-groups", "POST", payload);
+            if (result) {
+              Swal.fire("成功", `已保存 ${selectedRecipients.size} 个收件人到分组 "${groupName}"`, "success");
+              loadRecipientGroups();
+            }
+          }
+        });
+
+        // Expose functions to global scope
+        window.openRecipientGroupModal = openRecipientGroupModal;
+        window.deleteRecipientGroup = deleteRecipientGroup;
 
         async function viewTaskDetail(taskId) {
           const task = await fetchData(`/email/tasks/${taskId}`);

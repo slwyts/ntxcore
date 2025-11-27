@@ -443,3 +443,134 @@ pub async fn get_task_by_id(
         logs,
     })
 }
+
+// ============================================================================
+// 收件人分组 API
+// ============================================================================
+
+#[derive(Deserialize)]
+pub struct CreateRecipientGroupRequest {
+    pub name: String,
+    pub description: Option<String>,
+    #[serde(rename = "userEmails")]
+    pub user_emails: Vec<String>,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateRecipientGroupRequest {
+    pub name: String,
+    pub description: Option<String>,
+    #[serde(rename = "userEmails")]
+    pub user_emails: Vec<String>,
+}
+
+/// 创建收件人分组
+#[post("/email/recipient-groups")]
+pub async fn create_recipient_group(
+    db: web::Data<Database>,
+    req: web::Json<CreateRecipientGroupRequest>,
+) -> impl Responder {
+    println!("API Call: POST /api/admin/email/recipient-groups - name: {}", req.name);
+
+    match db.create_email_recipient_group(&req.name, req.description.as_deref(), &req.user_emails) {
+        Ok(id) => {
+            println!("Created recipient group with id: {}", id);
+            HttpResponse::Ok().json(serde_json::json!({
+                "message": "Recipient group created successfully",
+                "id": id
+            }))
+        }
+        Err(e) => {
+            eprintln!("Failed to create recipient group: {}", e);
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": "Failed to create recipient group"
+            }))
+        }
+    }
+}
+
+/// 获取所有收件人分组
+#[get("/email/recipient-groups")]
+pub async fn get_all_recipient_groups(
+    db: web::Data<Database>,
+) -> impl Responder {
+    println!("API Call: GET /api/admin/email/recipient-groups");
+
+    match db.get_all_email_recipient_groups() {
+        Ok(groups) => HttpResponse::Ok().json(groups),
+        Err(e) => {
+            eprintln!("Failed to get recipient groups: {}", e);
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": "Failed to get recipient groups"
+            }))
+        }
+    }
+}
+
+/// 获取单个收件人分组
+#[get("/email/recipient-groups/{id}")]
+pub async fn get_recipient_group_by_id(
+    db: web::Data<Database>,
+    path: web::Path<i64>,
+) -> impl Responder {
+    let group_id = path.into_inner();
+    println!("API Call: GET /api/admin/email/recipient-groups/{}", group_id);
+
+    match db.get_email_recipient_group_by_id(group_id) {
+        Ok(Some(group)) => HttpResponse::Ok().json(group),
+        Ok(None) => HttpResponse::NotFound().json(serde_json::json!({
+            "error": "Recipient group not found"
+        })),
+        Err(e) => {
+            eprintln!("Failed to get recipient group: {}", e);
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": "Failed to get recipient group"
+            }))
+        }
+    }
+}
+
+/// 更新收件人分组
+#[put("/email/recipient-groups/{id}")]
+pub async fn update_recipient_group(
+    db: web::Data<Database>,
+    path: web::Path<i64>,
+    req: web::Json<UpdateRecipientGroupRequest>,
+) -> impl Responder {
+    let group_id = path.into_inner();
+    println!("API Call: PUT /api/admin/email/recipient-groups/{}", group_id);
+
+    match db.update_email_recipient_group(group_id, &req.name, req.description.as_deref(), &req.user_emails) {
+        Ok(_) => HttpResponse::Ok().json(serde_json::json!({
+            "message": "Recipient group updated successfully"
+        })),
+        Err(e) => {
+            eprintln!("Failed to update recipient group: {}", e);
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": "Failed to update recipient group"
+            }))
+        }
+    }
+}
+
+/// 删除收件人分组
+#[delete("/email/recipient-groups/{id}")]
+pub async fn delete_recipient_group(
+    db: web::Data<Database>,
+    path: web::Path<i64>,
+) -> impl Responder {
+    let group_id = path.into_inner();
+    println!("API Call: DELETE /api/admin/email/recipient-groups/{}", group_id);
+
+    match db.delete_email_recipient_group(group_id) {
+        Ok(_) => HttpResponse::Ok().json(serde_json::json!({
+            "message": "Recipient group deleted successfully"
+        })),
+        Err(e) => {
+            eprintln!("Failed to delete recipient group: {}", e);
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": "Failed to delete recipient group"
+            }))
+        }
+    }
+}
