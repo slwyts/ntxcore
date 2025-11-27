@@ -4450,6 +4450,7 @@
               <input type="checkbox" class="group-user-checkbox" value="${user.email}" style="margin-right: 10px;" ${isChecked ? 'checked' : ''}>
               <span style="font-weight: 500;">${escapeHtml(user.nickname)}</span>
               <span style="color: #666; margin-left: 10px;">(${escapeHtml(user.email)})</span>
+              <span style="color: #999; margin-left: 8px; font-size: 12px;">UID: ${user.id}</span>
             `;
             const checkbox = label.querySelector('.group-user-checkbox');
             checkbox.addEventListener("change", function() {
@@ -4516,8 +4517,9 @@
 
         // 分组Modal用户搜索
         document.getElementById("group-user-search").addEventListener("input", function() {
-          const query = this.value.toLowerCase();
+          const query = this.value.toLowerCase().trim();
           const filteredUsers = allUsers.filter(user =>
+            user.id.toString() === query ||
             user.nickname.toLowerCase().includes(query) ||
             user.email.toLowerCase().includes(query)
           );
@@ -4769,6 +4771,7 @@
                 data-user-id="${user.id}" style="margin-right: 10px;" ${isChecked ? 'checked' : ''}>
               <span style="font-weight: 500;">${escapeHtml(user.nickname)}</span>
               <span style="color: #666; margin-left: 10px;">(${escapeHtml(user.email)})</span>
+              <span style="color: #999; margin-left: 8px; font-size: 12px;">UID: ${user.id}</span>
             `;
 
             // 监听checkbox变化，更新全局选中集合
@@ -4790,8 +4793,9 @@
 
         // 收件人搜索
         document.getElementById("recipient-search").addEventListener("input", function() {
-          const query = this.value.toLowerCase();
+          const query = this.value.toLowerCase().trim();
           const filteredUsers = allUsers.filter(user =>
+            user.id.toString() === query ||
             user.nickname.toLowerCase().includes(query) ||
             user.email.toLowerCase().includes(query)
           );
