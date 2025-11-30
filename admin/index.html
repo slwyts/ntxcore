@@ -719,9 +719,13 @@
               <tbody id="user-list-body"></tbody>
             </table>
             <div class="pagination">
+              <button id="first-user-page" disabled>首页</button>
               <button id="prev-user-page" disabled>上一页</button>
               <span id="current-user-page-info">第 1 页 / 共 1 页</span>
               <button id="next-user-page">下一页</button>
+              <button id="last-user-page">尾页</button>
+              <input type="number" id="user-page-input" min="1" style="width: 50px; margin-left: 10px; padding: 5px;" placeholder="页码">
+              <button id="go-user-page-btn">跳转</button>
             </div>
           </div>
         </section>
@@ -2219,9 +2223,12 @@
 
         document.getElementById("current-user-page-info").textContent =
           `第 ${page} 页 / 共 ${Math.ceil(filteredUsers.length / ITEMS_PER_PAGE)} 页`;
+        
+        const totalPages = Math.ceil(filteredUsers.length / ITEMS_PER_PAGE);
+        document.getElementById("first-user-page").disabled = page === 1;
         document.getElementById("prev-user-page").disabled = page === 1;
-        document.getElementById("next-user-page").disabled =
-          end >= filteredUsers.length;
+        document.getElementById("next-user-page").disabled = page >= totalPages;
+        document.getElementById("last-user-page").disabled = page >= totalPages;
       }
 
       async function loadUsers(page = 1, query = "") {
@@ -2373,6 +2380,66 @@
               currentUserPage,
               document.getElementById("user-search-input").value,
             );
+          }
+        });
+
+      document
+        .getElementById("first-user-page")
+        .addEventListener("click", () => {
+          currentUserPage = 1;
+          renderUserList(
+            currentUserPage,
+            document.getElementById("user-search-input").value,
+          );
+        });
+
+      document
+        .getElementById("last-user-page")
+        .addEventListener("click", () => {
+          const filteredUsers = allUsers.filter((user) => {
+            const q = document
+              .getElementById("user-search-input")
+              .value.toLowerCase();
+            return (
+              user.id.toString().includes(q) ||
+              user.email.toLowerCase().includes(q) ||
+              user.nickname.toLowerCase().includes(q)
+            );
+          });
+          const totalPages = Math.ceil(filteredUsers.length / ITEMS_PER_PAGE);
+          currentUserPage = totalPages;
+          renderUserList(
+            currentUserPage,
+            document.getElementById("user-search-input").value,
+          );
+        });
+
+      document
+        .getElementById("go-user-page-btn")
+        .addEventListener("click", () => {
+          const inputPage = parseInt(
+            document.getElementById("user-page-input").value,
+          );
+          const filteredUsers = allUsers.filter((user) => {
+            const q = document
+              .getElementById("user-search-input")
+              .value.toLowerCase();
+            return (
+              user.id.toString().includes(q) ||
+              user.email.toLowerCase().includes(q) ||
+              user.nickname.toLowerCase().includes(q)
+            );
+          });
+          const totalPages = Math.ceil(filteredUsers.length / ITEMS_PER_PAGE);
+
+          if (inputPage >= 1 && inputPage <= totalPages) {
+            currentUserPage = inputPage;
+            renderUserList(
+              currentUserPage,
+              document.getElementById("user-search-input").value,
+            );
+          } else {
+            Swal.fire("错误", "请输入有效的页码", "error");
           }
         });
 
