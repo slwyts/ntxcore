@@ -1,0 +1,7 @@
+name = "chaincatcher-rss-proxy"
+main = "index.js"
+compatibility_date = "2023-10-30"
+
+[observability]
+enabled = true
+head_sampling_rate = 1
